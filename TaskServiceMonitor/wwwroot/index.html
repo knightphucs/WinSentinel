@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TaskServiceMonitor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>TaskServiceMonitor</h1>
+    <span id="status" class="status status--connecting">Đang kết nối…</span>
+    <span id="elevation" class="status status--offline" hidden></span>
+  </header>
+
+  <nav class="tabs">
+    <button type="button" class="tab is-active" data-tab="dashboard">Dashboard</button>
+    <button type="button" class="tab" data-tab="tasks">Scheduled Tasks</button>
+    <button type="button" class="tab" data-tab="services">Services</button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <section id="panel-dashboard" class="panel">
+
+  <section class="cards">
+    <div class="card">
+      <span class="card__label">Event 1 giờ gần nhất</span>
+      <span class="card__value" id="card-hour">0</span>
+    </div>
+    <div class="card">
+      <span class="card__label">Máy đang gửi event</span>
+      <span class="card__value" id="card-hosts">0</span>
+    </div>
+    <div class="card card--danger">
+      <span class="card__label">Rủi ro cao hôm nay</span>
+      <span class="card__value" id="card-high">0</span>
+    </div>
+  </section>
+
+  <p class="note">
+    Số liệu tính từ tối đa 200 event gần nhất đang giữ ở trình duyệt — là con số
+    xấp xỉ, không phải thống kê toàn bộ CSDL.
+  </p>
+
+  <section class="filters">
+    <label>
+      Máy
+      <select id="filter-host"><option value="">Tất cả</option></select>
+    </label>
+    <label>
+      Loại đối tượng
+      <select id="filter-type">
+        <option value="">Tất cả</option>
+        <option value="ScheduledTask">Scheduled Task</option>
+        <option value="Service">Service</option>
+      </select>
+    </label>
+    <label>
+      Rủi ro
+      <select id="filter-risk">
+        <option value="">Tất cả</option>
+        <option value="High">High</option>
+        <option value="Medium">Medium</option>
+        <option value="Low">Low</option>
+      </select>
+    </label>
+    <span id="count" class="count"></span>
+  </section>
+
+  <table id="events">
+    <thead>
+      <tr>
+        <th>Rủi ro</th>
+        <th>Thời gian</th>
+        <th>Máy</th>
+        <th>Loại</th>
+        <th>Tên</th>
+        <th>Hành vi</th>
+        <th>Người thực hiện</th>
+      </tr>
+    </thead>
+    <tbody id="events-body"></tbody>
+  </table>
+
+  <p id="empty" class="empty">Chưa có event nào.</p>
+  </section>
+
+  <!-- ============================================================ Tab Tasks -->
+  <section id="panel-tasks" class="panel" hidden>
+    <div class="toolbar">
+      <strong>Scheduled Tasks</strong>
+      <span id="tasks-count" class="count"></span>
+      <button type="button" id="tasks-refresh" class="btn">Tải lại</button>
+    </div>
+
+    <form id="task-form" class="create-form">
+      <label>Tên task<input name="name" placeholder="WinSentinelDemo" required /></label>
+      <label>Lệnh chạy<input name="command" value="cmd.exe" required /></label>
+      <label>Tham số<input name="arguments" placeholder="/c echo hello" /></label>
+      <button type="submit" class="btn btn--primary">Tạo / ghi đè</button>
+      <span class="hint">Tên chưa có → tạo mới (4698). Tên đã có → ghi đè (4702).</span>
+    </form>
+
+    <div class="filters">
+      <label>Tìm tên<input id="tasks-search" class="search" placeholder="lọc theo tên hoặc đường dẫn…" /></label>
+      <label>Trạng thái
+        <select id="tasks-filter-state">
+          <option value="">Tất cả</option>
+          <option value="ready">Ready</option>
+          <option value="running">Running</option>
+          <option value="disabled">Disabled</option>
+        </select>
+      </label>
+      <label>Kiểu action
+        <select id="tasks-filter-action">
+          <option value="">Tất cả</option>
+          <option value="Exec">Exec</option>
+          <option value="ComHandler">ComHandler</option>
+        </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="tasks-only-writable" /> Chỉ hiện cái thao tác được
+      </label>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Tên</th><th>Đường dẫn</th><th>Trạng thái</th>
+          <th>Lệnh</th><th>Lần chạy cuối</th><th>Thao tác</th>
+        </tr>
+      </thead>
+      <tbody id="tasks-body"></tbody>
+    </table>
+
+    <div class="feed">
+      <div class="feed__head">Event vừa sinh ra — không cần sang tab Dashboard</div>
+      <ul id="tasks-feed" class="feed__list">
+        <li class="feed__empty">Chưa có. Thử tạo hoặc bật/tắt một task ở trên.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================================================ Tab Services -->
+  <section id="panel-services" class="panel" hidden>
+    <div class="toolbar">
+      <strong>Services</strong>
+      <span id="services-count" class="count"></span>
+      <button type="button" id="services-refresh" class="btn">Tải lại</button>
+    </div>
+
+    <form id="service-form" class="create-form">
+      <label>Tên service<input name="name" placeholder="WinSentinelDemoSvc" required /></label>
+      <label>Đường dẫn binary<input name="binaryPath" value="C:\Windows\System32\snmptrap.exe" required /></label>
+      <label>Start type
+        <select name="startType">
+          <option>demand start</option>
+          <option>auto start</option>
+          <option>disabled</option>
+        </select>
+      </label>
+      <button type="submit" class="btn btn--primary">Tạo service</button>
+    </form>
+
+    <div class="filters">
+      <label>Tìm tên<input id="services-search" class="search" placeholder="lọc theo tên hiển thị…" /></label>
+      <label>Trạng thái
+        <select id="services-filter-state">
+          <option value="">Tất cả</option>
+          <option value="running">Running</option>
+          <option value="stopped">Stopped</option>
+        </select>
+      </label>
+      <label>Start type
+        <select id="services-filter-starttype">
+          <option value="">Tất cả</option>
+          <option value="auto start">auto start</option>
+          <option value="demand start">demand start</option>
+          <option value="disabled">disabled</option>
+          <option value="system start">system start</option>
+          <option value="boot start">boot start</option>
+        </select>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="services-only-writable" /> Chỉ hiện cái thao tác được
+      </label>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Tên</th><th>Tên hiển thị</th><th>Trạng thái</th>
+          <th>Start type</th><th>Binary</th><th>Thao tác</th>
+        </tr>
+      </thead>
+      <tbody id="services-body"></tbody>
+    </table>
+
+    <div class="feed">
+      <div class="feed__head">Event vừa sinh ra — không cần sang tab Dashboard</div>
+      <ul id="services-feed" class="feed__list">
+        <li class="feed__empty">Chưa có. Thử tạo service hoặc đổi start type ở trên.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Modal xem RawXml, lay qua GET /api/events/{id} khi bam vao 1 dong -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal__box">
+      <div class="modal__head">
+        <strong id="modal-title">Chi tiết event</strong>
+        <button type="button" id="modal-close" class="modal__close">Đóng</button>
+      </div>
+      <div id="modal-meta" class="modal__meta"></div>
+      <pre id="modal-xml" class="modal__xml">Đang tải…</pre>
+    </div>
+  </div>
+
+  <script src="lib/signalr/signalr.min.js"></script>
+  <script src="app.js"></script>
+  <script src="manage.js"></script>
+</body>
+</html>

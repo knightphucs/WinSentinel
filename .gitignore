@@ -1,0 +1,8 @@
+bin/
+obj/
+
+# Mau XML thu thap duoc o buoc 1 - du lieu cuc bo, khong commit
+samples/
+
+.vs/
+*.user

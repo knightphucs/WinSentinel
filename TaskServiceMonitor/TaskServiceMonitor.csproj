@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TaskServiceMonitor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      EventLogWatcher nam trong assembly System.Diagnostics.EventLog.dll,
+      KHONG co san trong framework net8.0-windows nen phai tham chieu package nay.
+    -->
+    <PackageReference Include="System.Diagnostics.EventLog" Version="8.0.1" />
+
+    <!-- Giu o dong 8.x cho khop TargetFramework net8.0-windows, KHONG nhay len 9.x. -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

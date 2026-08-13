@@ -1,0 +1,411 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1.5rem;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: #1f2328;
+  background: #f6f8fa;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.status {
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid transparent;
+}
+
+.status--connecting { background: #fff8c5; border-color: #d4a72c; }
+.status--online     { background: #dafbe1; border-color: #2da44e; }
+.status--offline    { background: #ffebe9; border-color: #cf222e; }
+
+/* ---------------------------------------------------------- Tabs */
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.tab {
+  border: none;
+  background: none;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #57606a;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab:hover { color: #1f2328; }
+
+.tab.is-active {
+  color: #1f2328;
+  font-weight: 600;
+  border-bottom-color: #fd8c73;
+}
+
+/* ---------------------------------------------------------- Toolbar / form / nut */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.btn {
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  border-radius: 6px;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+}
+
+.btn:hover:not(:disabled) { background: #eaeef2; }
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: #1f883d;
+  border-color: #1f883d;
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) { background: #1a7f37; }
+
+.btn--danger { color: #cf222e; }
+
+.create-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.create-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: #57606a;
+}
+
+.create-form input,
+.create-form select,
+.search {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.875rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  min-width: 12rem;
+}
+
+.search { min-width: 14rem; }
+
+/* Dong khong duoc phep ghi: van hien day du, chi lam mo phan thao tac. */
+tr.is-readonly td:last-child { opacity: 0.4; }
+
+.toast {
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  border: 1px solid;
+}
+
+.toast--ok   { background: #dafbe1; border-color: #2da44e; color: #1a7f37; }
+.toast--fail { background: #ffebe9; border-color: #cf222e; color: #cf222e; }
+
+.hint {
+  font-size: 0.75rem;
+  color: #8c959f;
+  align-self: center;
+}
+
+.filters label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+  color: #1f2328;
+}
+
+/* Nhieu nut trong mot o -> cho xuong dong thay vi tran ngang. */
+td.actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------- Feed trong tab */
+
+.feed {
+  margin-top: 1rem;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.feed__head {
+  padding: 0.5rem 0.75rem;
+  background: #f6f8fa;
+  border-bottom: 1px solid #d0d7de;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #57606a;
+}
+
+.feed__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.feed__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid #eaeef2;
+  font-size: 0.8125rem;
+  animation: flash 1.2s ease-out;
+}
+
+.feed__item:last-child { border-bottom: none; }
+
+.feed__item--High   { background: #fff0ef; }
+.feed__item--Medium { background: #fffbea; }
+
+.feed__time {
+  color: #8c959f;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.feed__id {
+  font-family: ui-monospace, Consolas, monospace;
+  background: #eaeef2;
+  border-radius: 4px;
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+}
+
+.feed__empty {
+  padding: 0.75rem;
+  color: #8c959f;
+  font-size: 0.8125rem;
+}
+
+.cards {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.card {
+  flex: 1 1 12rem;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.card__label { font-size: 0.75rem; color: #57606a; }
+.card__value { font-size: 1.75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.card--danger .card__value { color: #cf222e; }
+
+.note {
+  margin: 0 0 1rem;
+  font-size: 0.75rem;
+  color: #8c959f;
+}
+
+.filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: #57606a;
+}
+
+.filters select {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.875rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  min-width: 11rem;
+}
+
+.count {
+  margin-left: auto;
+  color: #57606a;
+  font-size: 0.8rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #eaeef2;
+  vertical-align: top;
+}
+
+th {
+  background: #f6f8fa;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #57606a;
+  white-space: nowrap;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: #f6f8fa; }
+
+.col-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.col-name { font-family: ui-monospace, Consolas, monospace; font-size: 0.8125rem; word-break: break-all; }
+
+.muted { color: #8c959f; }
+
+/* Dong vua nhan duoc: nhay mau roi tat dan, de mat bat duoc cai gi vua thay doi. */
+@keyframes flash { from { background: #ddf4ff; } to { background: transparent; } }
+.is-new { animation: flash 1.2s ease-out; }
+
+.empty {
+  color: #8c959f;
+  text-align: center;
+  padding: 2rem;
+}
+
+/* ---------------------------------------------------------- Muc rui ro */
+
+tbody tr { cursor: pointer; }
+
+.risk {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.risk--High   { background: #cf222e; color: #fff; }
+.risk--Medium { background: #fff8c5; color: #7d4e00; border: 1px solid #d4a72c; }
+.risk--Low    { background: #eaeef2; color: #57606a; }
+
+/* Dong rui ro cao to nen do nhat de nhin luot la thay ngay. */
+tr.row--High { background: #fff0ef; }
+tr.row--High:hover { background: #ffe3e1; }
+
+/* ---------------------------------------------------------- Modal RawXml */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 31, 36, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.modal[hidden] { display: none; }
+
+.modal__box {
+  background: #fff;
+  border-radius: 8px;
+  width: min(60rem, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.modal__close {
+  border: 1px solid #d0d7de;
+  background: #f6f8fa;
+  border-radius: 6px;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+}
+
+.modal__close:hover { background: #eaeef2; }
+
+.modal__meta {
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  color: #57606a;
+  border-bottom: 1px solid #eaeef2;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.25rem 1rem;
+}
+
+.modal__xml {
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #f6f8fa;
+}

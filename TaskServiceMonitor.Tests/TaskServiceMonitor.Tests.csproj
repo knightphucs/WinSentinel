@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>TaskServiceMonitor.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Mau XML THAT lay tu may dev, nhung thang vao assembly de test khong phu thuoc
+      thu muc samples/ (thu muc do bi gitignore va co the bi xoa bat cu luc nao).
+    -->
+    <EmbeddedResource Include="Fixtures\*.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TaskServiceMonitor\TaskServiceMonitor.csproj" />
+  </ItemGroup>
+
+</Project>
