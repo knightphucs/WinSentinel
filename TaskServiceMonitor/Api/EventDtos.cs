@@ -19,11 +19,25 @@ public sealed record EventSummaryDto(
     string ActionDescription,
     RiskLevel RiskLevel,
     string Channel,
+    string ProviderName,
+
+    /// <summary>Cần cho "lưu event đang chọn" — XPath lọc theo EventRecordID.</summary>
+    long? RecordId,
+
     string? ImagePath,
     string? StartType,
     string? PreviousStartType,
     string? TaskActionType,
-    string? TaskCommand)
+    string? TaskCommand,
+    string? TaskInstanceId,
+    string? TaskActionResultCode,
+
+    // Cot kieu Event Viewer (buoc 8). Description CO tinh trong summary vi bang log
+    // hien no ngay tren dong, khong doi bam vao xem chi tiet. Van KHONG kem RawXml.
+    string? Description,
+    int? Level,
+    string? LevelDisplayName,
+    string? TaskCategoryName)
 {
     /// <summary>
     /// MỘT định nghĩa mapping duy nhất, dùng cho cả hai đường:
@@ -43,11 +57,19 @@ public sealed record EventSummaryDto(
             e.ActionDescription,
             e.RiskLevel,
             e.Channel,
+            e.ProviderName,
+            e.RecordId,
             e.ImagePath,
             e.StartType,
             e.PreviousStartType,
             e.TaskActionType,
-            e.TaskCommand);
+            e.TaskCommand,
+            e.TaskInstanceId,
+            e.TaskActionResultCode,
+            e.Description,
+            e.Level,
+            e.LevelDisplayName,
+            e.TaskCategoryName);
 
     // Phai khai bao SAU Projection: static field initializer chay theo thu tu trong file.
     private static readonly Func<WindowsMonitorEvent, EventSummaryDto> CompiledProjection =
@@ -55,6 +77,21 @@ public sealed record EventSummaryDto(
 
     public static EventSummaryDto From(WindowsMonitorEvent e) => CompiledProjection(e);
 }
+
+/// <summary>
+/// Một dòng của bảng Overview/Summary (kiểu Event Viewer): số event theo mức
+/// rủi ro, cắt theo 3 khung giờ. <c>RiskLevel</c> để dạng chuỗi (không dùng enum
+/// trực tiếp) để luôn khớp <c>JsonStringEnumConverter</c> đã đăng ký chung.
+/// <c>Breakdown</c> là danh sách xổ ra khi bấm "+" trên dòng này, giống nút "+"
+/// trên mỗi hàng của "Summary of Administrative Events" thật trong Event Viewer.
+/// </summary>
+public sealed record SummaryRowDto(
+    string RiskLevel, int LastHour, int Last24h, int Last7d,
+    IReadOnlyList<SummaryBreakdownRowDto> Breakdown);
+
+/// <summary>Một dòng con khi xổ "+" - tương đương Event ID / Source / Log của Event Viewer.</summary>
+public sealed record SummaryBreakdownRowDto(
+    int EventId, string Source, string Log, int LastHour, int Last24h, int Last7d);
 
 /// <summary>Bản đầy đủ cho màn hình chi tiết — có kèm <c>RawXml</c>.</summary>
 public sealed record EventDetailDto(
@@ -83,6 +120,18 @@ public sealed record EventDetailDto(
     string? TaskArguments,
     string? TaskRunAsUser,
     string? TaskRunLevel,
+    string? TaskInstanceId,
+    string? TaskActionResultCode,
+
+    // Nhom hien thi kieu Event Viewer (buoc 8) - day du hon ban summary.
+    string? Description,
+    int? Level,
+    string? LevelDisplayName,
+    int? TaskCategoryId,
+    string? TaskCategoryName,
+    string? OpcodeName,
+    string? Keywords,
+
     bool IsRecognized,
     IReadOnlyDictionary<string, string> Data,
     string RawXml);

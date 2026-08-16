@@ -1,24 +1,218 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------- Mau theo theme
+   3 trang thai: mac dinh theo he thong (prefers-color-scheme), hoac ep tay
+   qua [data-theme] (nut o header, luu localStorage - xem theme.js). Moi mau
+   trong file nay deu di qua bien o day, KHONG hardcode hex rai rac. */
+
+:root {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-alt: #f6f8fa;
+  --surface-hover: #eaeef2;
+  --border: #d0d7de;
+  --border-subtle: #eaeef2;
+  --text: #1f2328;
+  --text-muted: #57606a;
+  --text-faint: #8c959f;
+  --accent: #0969da;
+  --tab-active-border: #fd8c73;
+
+  --btn-primary-bg: #1f883d;
+  --btn-primary-bg-hover: #1a7f37;
+  --btn-primary-text: #ffffff;
+
+  --success-text: #1a7f37;
+  --success-bg: #dafbe1;
+  --success-border: #2da44e;
+
+  --danger: #cf222e;
+  --danger-bg: #ffebe9;
+
+  --warning-bg: #fff8c5;
+  --warning-border: #d4a72c;
+  --warning-text: #7d4e00;
+
+  --code-bg: #eaeef2;
+  --flash: #ddf4ff;
+  --overlay: rgba(27, 31, 36, 0.5);
+  --shadow: rgba(140, 149, 159, 0.25);
+
+  --risk-high-bg: #cf222e;
+  --risk-high-text: #ffffff;
+  --risk-medium-bg: #fff8c5;
+  --risk-medium-text: #7d4e00;
+  --risk-medium-border: #d4a72c;
+  --risk-low-bg: #eaeef2;
+  --risk-low-text: #57606a;
+
+  --row-high-bg: #fff0ef;
+  --row-high-hover: #ffe3e1;
+  --feed-high-bg: #fff0ef;
+  --feed-medium-bg: #fffbea;
+
+  /* Dong dang chon trong bang log (khung chi tiet ben duoi dang hien dong nay). */
+  --row-selected-bg: #ddf4ff;
+  --row-selected-border: #0969da;
+
+  /* Mau BIEU DO - CO Y tach khoi --risk-*-bg. Nhung bien do la nen badge NHAT
+     (#eaeef2, #fff8c5); ve cot chong len nhau se gan nhu vo hinh. */
+  --chart-high: #cf222e;
+  --chart-medium: #d4a72c;
+  --chart-low: #54aeff;
+  --chart-grid: #d0d7de;
+  --chart-axis: #8c959f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-alt: #1c2128;
+    --surface-hover: #21262d;
+    --border: #30363d;
+    --border-subtle: #21262d;
+    --text: #e6edf3;
+    --text-muted: #9198a1;
+    --text-faint: #6e7681;
+    --accent: #4493f8;
+    --tab-active-border: #f78166;
+
+    --btn-primary-bg: #238636;
+    --btn-primary-bg-hover: #2ea043;
+    --btn-primary-text: #ffffff;
+
+    --success-text: #3fb950;
+    --success-bg: rgba(46, 160, 67, 0.15);
+    --success-border: #2ea043;
+
+    --danger: #f85149;
+    --danger-bg: rgba(248, 81, 73, 0.15);
+
+    --warning-bg: rgba(210, 153, 34, 0.15);
+    --warning-border: #9e6a03;
+    --warning-text: #e3b341;
+
+    --code-bg: #21262d;
+    --flash: rgba(56, 139, 253, 0.2);
+    --overlay: rgba(1, 4, 9, 0.7);
+    --shadow: rgba(1, 4, 9, 0.6);
+
+    --risk-high-bg: #f85149;
+    --risk-high-text: #0d1117;
+    --risk-medium-bg: rgba(210, 153, 34, 0.2);
+    --risk-medium-text: #e3b341;
+    --risk-medium-border: #9e6a03;
+    --risk-low-bg: #21262d;
+    --risk-low-text: #9198a1;
+
+    --row-high-bg: rgba(248, 81, 73, 0.08);
+    --row-high-hover: rgba(248, 81, 73, 0.15);
+    --feed-high-bg: rgba(248, 81, 73, 0.08);
+    --feed-medium-bg: rgba(210, 153, 34, 0.08);
+
+    --row-selected-bg: rgba(56, 139, 253, 0.25);
+    --row-selected-border: #4493f8;
+
+    --chart-high: #f85149;
+    --chart-medium: #e3b341;
+    --chart-low: #4493f8;
+    --chart-grid: #30363d;
+    --chart-axis: #6e7681;
+  }
+}
+
+/* Ep tay qua nut theme-toggle (theme.js) - thang the ca he thong lan nhanh o tren. */
+:root[data-theme="dark"] {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-alt: #1c2128;
+  --surface-hover: #21262d;
+  --border: #30363d;
+  --border-subtle: #21262d;
+  --text: #e6edf3;
+  --text-muted: #9198a1;
+  --text-faint: #6e7681;
+  --accent: #4493f8;
+  --tab-active-border: #f78166;
+
+  --btn-primary-bg: #238636;
+  --btn-primary-bg-hover: #2ea043;
+  --btn-primary-text: #ffffff;
+
+  --success-text: #3fb950;
+  --success-bg: rgba(46, 160, 67, 0.15);
+  --success-border: #2ea043;
+
+  --danger: #f85149;
+  --danger-bg: rgba(248, 81, 73, 0.15);
+
+  --warning-bg: rgba(210, 153, 34, 0.15);
+  --warning-border: #9e6a03;
+  --warning-text: #e3b341;
+
+  --code-bg: #21262d;
+  --flash: rgba(56, 139, 253, 0.2);
+  --overlay: rgba(1, 4, 9, 0.7);
+  --shadow: rgba(1, 4, 9, 0.6);
+
+  --risk-high-bg: #f85149;
+  --risk-high-text: #0d1117;
+  --risk-medium-bg: rgba(210, 153, 34, 0.2);
+  --risk-medium-text: #e3b341;
+  --risk-medium-border: #9e6a03;
+  --risk-low-bg: #21262d;
+  --risk-low-text: #9198a1;
+
+  --row-high-bg: rgba(248, 81, 73, 0.08);
+  --row-high-hover: rgba(248, 81, 73, 0.15);
+  --feed-high-bg: rgba(248, 81, 73, 0.08);
+  --feed-medium-bg: rgba(210, 153, 34, 0.08);
+
+  --row-selected-bg: rgba(56, 139, 253, 0.25);
+  --row-selected-border: #4493f8;
+
+  --chart-high: #f85149;
+  --chart-medium: #e3b341;
+  --chart-low: #4493f8;
+  --chart-grid: #30363d;
+  --chart-axis: #6e7681;
+}
+
+html,
+body {
+  height: 100%;
+}
 
 body {
   margin: 0;
-  padding: 1.5rem;
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
-  color: #1f2328;
-  background: #f6f8fa;
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
 }
 
 header {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 h1 {
   margin: 0;
   font-size: 1.25rem;
+}
+
+.theme-toggle {
+  margin-left: auto;
 }
 
 .status {
@@ -28,36 +222,162 @@ h1 {
   border: 1px solid transparent;
 }
 
-.status--connecting { background: #fff8c5; border-color: #d4a72c; }
-.status--online     { background: #dafbe1; border-color: #2da44e; }
-.status--offline    { background: #ffebe9; border-color: #cf222e; }
+.status--connecting {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+.status--online {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+.status--offline {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
 
-/* ---------------------------------------------------------- Tabs */
+/* ---------------------------------------------------------- Bo cuc sidebar + noi dung */
+
+.app-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 14rem;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1rem 0.75rem;
+  overflow-y: auto;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
 
 .tabs {
   display: flex;
-  gap: 0.25rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid #d0d7de;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .tab {
   border: none;
+  border-left: 3px solid transparent;
   background: none;
-  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
   cursor: pointer;
   font-size: 0.875rem;
-  color: #57606a;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  color: var(--text-muted);
+  text-align: left;
 }
 
-.tab:hover { color: #1f2328; }
+.tab:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+}
 
 .tab.is-active {
-  color: #1f2328;
+  color: var(--text);
   font-weight: 600;
-  border-bottom-color: #fd8c73;
+  background: var(--surface-hover);
+  border-left-color: var(--tab-active-border);
+}
+
+/* ---------------------------------------------------------- Console tree (kieu Event Viewer) */
+
+.tree-group {
+  margin-top: 0.5rem;
+}
+
+.tree-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.tree-toggle:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+.tree-caret {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+/* Mac dinh (aria-expanded="true") mui ten cho xuong = "dang mo". Dong lai thi xoay
+   ngang, giong caret cua Event Viewer/Windows Explorer. */
+.tree-toggle[aria-expanded="false"] .tree-caret {
+  transform: rotate(-90deg);
+}
+
+.tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-left: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+/* BAY da gap o .filter-panel: [hidden] mac dinh browser la display:none, nhung
+   author CSS (dong display:flex o tren) se de bang LUON HIEN neu khong co dong
+   nay - CSS cua trang luon thang UA stylesheet du specificity thap hon. */
+.tree-children[hidden] {
+  display: none;
+}
+
+.tab--leaf {
+  font-size: 0.8125rem;
+}
+
+/* Channel da ghim tu tab "Duyet log khac" - leaf + nut bo ghim nam canh nhau. */
+.pinned-channel {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.pinned-channel .tab--leaf {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-channel__remove {
+  flex-shrink: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  border-radius: 3px;
+}
+
+.pinned-channel__remove:hover {
+  background: var(--surface-hover);
+  color: var(--danger);
 }
 
 /* ---------------------------------------------------------- Toolbar / form / nut */
@@ -70,15 +390,18 @@ h1 {
 }
 
 .btn {
-  border: 1px solid #d0d7de;
-  background: #f6f8fa;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
   border-radius: 6px;
   padding: 0.3rem 0.75rem;
   cursor: pointer;
   font-size: 0.8125rem;
 }
 
-.btn:hover:not(:disabled) { background: #eaeef2; }
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
 
 .btn:disabled {
   opacity: 0.45;
@@ -86,22 +409,26 @@ h1 {
 }
 
 .btn--primary {
-  background: #1f883d;
-  border-color: #1f883d;
-  color: #fff;
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
 }
 
-.btn--primary:hover:not(:disabled) { background: #1a7f37; }
+.btn--primary:hover:not(:disabled) {
+  background: var(--btn-primary-bg-hover);
+}
 
-.btn--danger { color: #cf222e; }
+.btn--danger {
+  color: var(--danger);
+}
 
 .create-form {
   display: flex;
   align-items: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
-  background: #fff;
-  border: 1px solid #d0d7de;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.75rem 1rem;
   margin-bottom: 0.75rem;
@@ -112,7 +439,7 @@ h1 {
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.75rem;
-  color: #57606a;
+  color: var(--text-muted);
 }
 
 .create-form input,
@@ -120,15 +447,21 @@ h1 {
 .search {
   padding: 0.3rem 0.5rem;
   font-size: 0.875rem;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
   min-width: 12rem;
 }
 
-.search { min-width: 14rem; }
+.search {
+  min-width: 14rem;
+}
 
 /* Dong khong duoc phep ghi: van hien day du, chi lam mo phan thao tac. */
-tr.is-readonly td:last-child { opacity: 0.4; }
+tr.is-readonly td:last-child {
+  opacity: 0.4;
+}
 
 .toast {
   padding: 0.6rem 1rem;
@@ -138,12 +471,20 @@ tr.is-readonly td:last-child { opacity: 0.4; }
   border: 1px solid;
 }
 
-.toast--ok   { background: #dafbe1; border-color: #2da44e; color: #1a7f37; }
-.toast--fail { background: #ffebe9; border-color: #cf222e; color: #cf222e; }
+.toast--ok {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+.toast--fail {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 .hint {
   font-size: 0.75rem;
-  color: #8c959f;
+  color: var(--text-faint);
   align-self: center;
 }
 
@@ -151,7 +492,7 @@ tr.is-readonly td:last-child { opacity: 0.4; }
   flex-direction: row;
   align-items: center;
   gap: 0.35rem;
-  color: #1f2328;
+  color: var(--text);
 }
 
 /* Nhieu nut trong mot o -> cho xuong dong thay vi tran ngang. */
@@ -164,20 +505,20 @@ td.actions {
 /* ---------------------------------------------------------- Feed trong tab */
 
 .feed {
-  margin-top: 1rem;
-  background: #fff;
-  border: 1px solid #d0d7de;
+  margin-bottom: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
 
 .feed__head {
   padding: 0.5rem 0.75rem;
-  background: #f6f8fa;
-  border-bottom: 1px solid #d0d7de;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
   font-size: 0.8rem;
   font-weight: 600;
-  color: #57606a;
+  color: var(--text-muted);
 }
 
 .feed__list {
@@ -193,25 +534,31 @@ td.actions {
   align-items: center;
   gap: 0.6rem;
   padding: 0.35rem 0.75rem;
-  border-bottom: 1px solid #eaeef2;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 0.8125rem;
   animation: flash 1.2s ease-out;
 }
 
-.feed__item:last-child { border-bottom: none; }
+.feed__item:last-child {
+  border-bottom: none;
+}
 
-.feed__item--High   { background: #fff0ef; }
-.feed__item--Medium { background: #fffbea; }
+.feed__item--High {
+  background: var(--feed-high-bg);
+}
+.feed__item--Medium {
+  background: var(--feed-medium-bg);
+}
 
 .feed__time {
-  color: #8c959f;
+  color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .feed__id {
   font-family: ui-monospace, Consolas, monospace;
-  background: #eaeef2;
+  background: var(--code-bg);
   border-radius: 4px;
   padding: 0 0.35rem;
   font-size: 0.75rem;
@@ -219,7 +566,7 @@ td.actions {
 
 .feed__empty {
   padding: 0.75rem;
-  color: #8c959f;
+  color: var(--text-faint);
   font-size: 0.8125rem;
 }
 
@@ -232,8 +579,8 @@ td.actions {
 
 .card {
   flex: 1 1 12rem;
-  background: #fff;
-  border: 1px solid #d0d7de;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.75rem 1rem;
   display: flex;
@@ -241,14 +588,171 @@ td.actions {
   gap: 0.25rem;
 }
 
-.card__label { font-size: 0.75rem; color: #57606a; }
-.card__value { font-size: 1.75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.card--danger .card__value { color: #cf222e; }
+.card__label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.card__value {
+  font-size: 1.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.card--danger .card__value {
+  color: var(--danger);
+}
 
 .note {
   margin: 0 0 1rem;
   font-size: 0.75rem;
-  color: #8c959f;
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------- Overview and Summary (kieu Event Viewer) */
+
+/* Moi khoi rong het chieu ngang (giong Event Viewer that) de khong bi lech
+   khi xep chung hang voi khoi khac co noi dung khac hinh dang (vd Overview
+   chi co doan text, ben canh 2 bang). Rieng BANG ben trong moi khoi gon lai
+   theo noi dung (xem #summary-table/#log-summary-table ben duoi), khong
+   keo dai het chieu rong panel. */
+.ov {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.ov-panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ov-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: none;
+  background: var(--surface-alt);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ov-panel__header:hover {
+  background: var(--surface-hover);
+}
+
+.ov-caret {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.ov-panel__header[aria-expanded="false"] .ov-caret {
+  transform: rotate(-90deg);
+}
+
+.ov-panel__body {
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* BAY da gap nhieu lan (.filter-panel, .tree-children, .modal__meta): [hidden]
+   mac dinh la display:none nhung author CSS (padding/display o tren neu co) se
+   de bang LUON HIEN neu thieu dong nay. */
+.ov-panel__body[hidden] {
+  display: none;
+}
+
+.ov-panel__body p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.ov-panel__body .table-wrap {
+  margin: 0;
+  /* .table-wrap la div block binh thuong -> mac dinh se rong het .ov-panel__body
+     (gio da rong het trang) du ban than table ben trong da gon lai. inline-block
+     de chinh khung border/nen nay cung om sat theo table, khong keo dai theo. */
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* Panel cha gio rong het chieu ngang (giong Event Viewer that), nhung BANG thi
+   gon lai theo noi dung - khong ke thua width:100% cua rule "table" chung o
+   tren, tranh bi keo dai het panel trong khi chi co vai dong so lieu ngan. */
+#summary-table {
+  width: auto;
+  /* 7 cot (Rui ro, Event ID, Source, Log, 1 gio, 24 gio, 7 ngay) - rong hon
+     truoc vi cac cot "cho xem chi tiet" gio nam ngay tren bang chinh, khong
+     con o bang long rieng trong dong xoe. */
+  min-width: 34rem;
+}
+
+#log-summary-table {
+  width: auto;
+  min-width: 20rem;
+}
+
+/* Cot so (1 gio/24 gio/7 ngay) can lien nhau canh phai; Rui ro/Event ID/Source/Log
+   la text nen giu canh trai mac dinh cua "th, td" o tren. */
+#summary-table td:nth-child(n + 5) {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Cot 3 (Event da nhan) va 5 (Thoi gian cap nhat) la so/thoi gian - can phai.
+   Cot 4 (RecordId cuoi) BO QUA vi co the kem badge "khoi phuc N" - can phai se
+   lam badge dinh sat mep phai trong, xau hon la giu trai. */
+#log-summary-table td:nth-child(3),
+#log-summary-table td:nth-child(5) {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Nut "+" xo breakdown tren tung dong rui ro, giong Summary of Administrative
+   Events that trong Event Viewer. */
+.ov-expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.ov-expand-toggle:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.ov-expand-toggle:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Dong chi tiet (Event ID/Source/Log rieng le) xoe ra tu dong tong hop rui ro -
+   cung bang, cung cot, chi khac nen/co chu de phan biet voi dong tong hop. Cot
+   dau de trong (xem summary.js) nen tu tao cam giac thut vao, khong can
+   padding-left rieng nhu bang long truoc day. */
+.ov-detail-row td {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .filters {
@@ -259,74 +763,303 @@ td.actions {
   flex-wrap: wrap;
 }
 
+/* Day nhom con lai sang phai: ben trai la thu de LOC, ben phai la thu de LAM.
+   Thanh cong cu panel log co ~8 control, khong chia nhom thi thanh mot hang dai
+   khong doc duoc dau la dau. */
+.filters__actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
 .filters label {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.8rem;
-  color: #57606a;
+  color: var(--text-muted);
 }
 
 .filters select {
   padding: 0.3rem 0.5rem;
   font-size: 0.875rem;
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
   min-width: 11rem;
 }
 
 .count {
   margin-left: auto;
-  color: #57606a;
+  color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+/* ---------------------------------------------------------- Custom Views (bo loc da luu) */
+
+.custom-views {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.custom-views select {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------- Popover "Bo loc" */
+
+.filter-menu {
+  position: relative;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.filter-toggle .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.filter-panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 14rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+/* BAY da dinh: [hidden] mac dinh cua trinh duyet la display:none, nhung CSS
+   cua TRANG (author stylesheet) luon thang UA stylesheet du specificity thap
+   hon - nen ".filter-panel { display:flex }" o tren se de bang LUON HIEN, bat
+   ke thuoc tinh hidden bang gi. Phai co dong nay thi JS toggle hidden moi co
+   tac dung (khien nut "Bo loc" khong tat duoc). */
+.filter-panel[hidden] {
+  display: none;
+}
+
+/* Bang co the rong hon vung hien thi sau khi keo cot -> cuon ngang trong
+   chinh khung cua no, khong lam vo layout trang. */
+.table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  background: #fff;
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  overflow: hidden;
 }
 
-th, td {
+th,
+td {
   text-align: left;
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #eaeef2;
+  border-bottom: 1px solid var(--border-subtle);
   vertical-align: top;
+  overflow-wrap: break-word;
 }
 
 th {
-  background: #f6f8fa;
+  position: relative;
+  background: var(--surface-alt);
   font-weight: 600;
   font-size: 0.8rem;
-  color: #57606a;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
-tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: #f6f8fa; }
+/* Duong ke doc giua cac cot header - de nhin thay ranh gioi de bam keo-resize,
+   thay vi phai ro mau vao dung dai 6px an hinh moi thay. */
+th:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
 
-.col-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.col-name { font-family: ui-monospace, Consolas, monospace; font-size: 0.8125rem; word-break: break-all; }
+/* ---------------------------------------------------------- Keo doi rong cot */
 
-.muted { color: #8c959f; }
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 1;
+  touch-action: none;
+}
+
+.col-resizer:hover,
+.col-resizer.is-active {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+/* ---------------------------------------------------------- Loc theo header cot (Nhat ky su kien) */
+
+/* Truoc day 0.65rem + mau text-faint mac dinh - qua nho/mo, kho thay co filter
+   o cot nao. Tang co chu, doi mau mac dinh sang text-muted (chi accent hoa khi
+   hover/dang loc), them vung bam (padding) va nen tron nhe cho de bam tren
+   man hinh nho. */
+.col-filter-toggle {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  margin-left: 0.3rem;
+  padding: 0.1rem 0.25rem;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.col-filter-toggle:hover {
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.col-filter-toggle.is-active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.col-filter-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 0.25rem;
+  min-width: 12rem;
+  max-width: 16rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow);
+  padding: 0.6rem;
+  /* th la cha co font-weight/white-space/color rieng cho tieu de - reset lai
+     de noi dung popover doc binh thuong, khong bi in dam/khong xuong dong. */
+  font-weight: normal;
+  white-space: normal;
+  cursor: default;
+}
+
+.col-filter-list {
+  max-height: 12rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.col-filter-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.col-filter-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.col-filter-actions .btn {
+  flex: 1;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Trong luc keo: chan text bi bam chon linh tinh khap trang. */
+body.is-col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+tbody tr:hover {
+  background: var(--surface-alt);
+}
+
+.col-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.col-name {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8125rem;
+  word-break: break-all;
+}
+
+.muted {
+  color: var(--text-faint);
+}
 
 /* Dong vua nhan duoc: nhay mau roi tat dan, de mat bat duoc cai gi vua thay doi. */
-@keyframes flash { from { background: #ddf4ff; } to { background: transparent; } }
-.is-new { animation: flash 1.2s ease-out; }
+@keyframes flash {
+  from {
+    background: var(--flash);
+  }
+  to {
+    background: transparent;
+  }
+}
+.is-new {
+  animation: flash 1.2s ease-out;
+}
 
 .empty {
-  color: #8c959f;
+  color: var(--text-faint);
   text-align: center;
   padding: 2rem;
 }
 
 /* ---------------------------------------------------------- Muc rui ro */
 
-tbody tr { cursor: pointer; }
+tbody tr {
+  cursor: pointer;
+}
 
 .risk {
   display: inline-block;
@@ -337,30 +1070,81 @@ tbody tr { cursor: pointer; }
   white-space: nowrap;
 }
 
-.risk--High   { background: #cf222e; color: #fff; }
-.risk--Medium { background: #fff8c5; color: #7d4e00; border: 1px solid #d4a72c; }
-.risk--Low    { background: #eaeef2; color: #57606a; }
+.risk--High {
+  background: var(--risk-high-bg);
+  color: var(--risk-high-text);
+}
+.risk--Medium {
+  background: var(--risk-medium-bg);
+  color: var(--risk-medium-text);
+  border: 1px solid var(--risk-medium-border);
+}
+.risk--Low {
+  background: var(--risk-low-bg);
+  color: var(--risk-low-text);
+}
 
 /* Dong rui ro cao to nen do nhat de nhin luot la thay ngay. */
-tr.row--High { background: #fff0ef; }
-tr.row--High:hover { background: #ffe3e1; }
+tr.row--High {
+  background: var(--row-high-bg);
+}
+tr.row--High:hover {
+  background: var(--row-high-hover);
+}
+
+/* ---------------------------------------------------------- Badge trang thai (Log Summary) */
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.badge--ok {
+  background: var(--success-bg);
+  color: var(--success-text);
+  border-color: var(--success-border);
+}
+.badge--warn {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-color: var(--warning-border);
+}
+.badge--fail {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+/* Trung tinh (khong phai ok/warn/fail) - dung cho badge "khoi phuc N event luc khoi
+   dong" (cursor/resume) o Log Summary, chi la thong tin, khong phai canh bao. */
+.badge--info {
+  background: var(--flash);
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 /* ---------------------------------------------------------- Modal RawXml */
 
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(27, 31, 36, 0.5);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 2rem;
 }
 
-.modal[hidden] { display: none; }
+.modal[hidden] {
+  display: none;
+}
 
 .modal__box {
-  background: #fff;
+  background: var(--surface);
   border-radius: 8px;
   width: min(60rem, 100%);
   max-height: 100%;
@@ -374,28 +1158,98 @@ tr.row--High:hover { background: #ffe3e1; }
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #d0d7de;
+  border-bottom: 1px solid var(--border);
 }
 
 .modal__close {
-  border: 1px solid #d0d7de;
-  background: #f6f8fa;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
   border-radius: 6px;
   padding: 0.25rem 0.75rem;
   cursor: pointer;
   font-size: 0.8125rem;
 }
 
-.modal__close:hover { background: #eaeef2; }
+.modal__close:hover {
+  background: var(--surface-hover);
+}
 
+/* Tab "Tong quan"/"Chi tiet": modal-meta/modal-xml da la dung noi dung can
+   roi, day chi la UI chuyen qua lai giua hai khoi da co san. */
+.modal__tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 1rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal__tab {
+  border: none;
+  background: none;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.modal__tab:hover {
+  color: var(--text);
+}
+
+.modal__tab.is-active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--tab-active-border);
+}
+
+/* Kieu EventViewer: moi field MOT dong rieng (nhan trai, gia tri phai), gia
+   tri xuong dong khi dai thay vi bi nhoi chung "Nhan: gia tri" tren mot dong
+   roi trong cot auto-fit nhu truoc (dai cat cut/de chen lan nhau). */
 .modal__meta {
   padding: 0.75rem 1rem;
   font-size: 0.8125rem;
-  color: #57606a;
-  border-bottom: 1px solid #eaeef2;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0.25rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* Bo 3 lop nay dung chung cho CA modal (.modal__meta-*) lan khung chi tiet doc
+   duoi bang (.meta-* trong detailpane.js) - cung mot kieu trinh bay "nhan trai /
+   gia tri phai", nen dung chung selector thay vi chep lai. */
+.modal__meta-row,
+.meta-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.modal__meta-label,
+.meta-label {
+  flex: 0 0 10rem;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+.modal__meta-value,
+.meta-value {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* BAY da gap 2 lan roi (.filter-panel, .tree-children): [hidden] mac dinh la
+   display:none nhung author CSS o tren (display:grid) se de bang LUON HIEN
+   neu thieu dong nay - CSS trang luon thang UA stylesheet du specificity. */
+.modal__meta[hidden] {
+  display: none;
 }
 
 .modal__xml {
@@ -407,5 +1261,685 @@ tr.row--High:hover { background: #ffe3e1; }
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
-  background: #f6f8fa;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------- Khung chi tiet doc duoi bang
+   Bang o tren, chi tiet o duoi, thanh keo o giua. Xem detailpane.js. */
+.split {
+  display: flex;
+  flex-direction: column;
+
+  /* CO Y dung don vi viewport chu khong phai height:100%: cha (.panel) cao 'auto'
+     nen 100% se rot ve 'auto', va luc do .split__top khong tao duoc thanh cuon. */
+  height: 82dvh;
+  min-height: 28rem;
+}
+
+.split__top {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* .table-wrap trong split phai tu cuon (mac dinh no chi cuon NGANG). */
+.split__top .table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Header dinh lai khi cuon. */
+.split__top thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-alt);
+}
+
+/* Cung y tuong .col-resizer nhung theo chieu doc. */
+.split__bar {
+  flex: 0 0 auto;
+  height: 6px;
+  margin: 0.25rem 0;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.split__bar:hover,
+body.is-row-resizing .split__bar {
+  background: var(--accent);
+}
+
+/* Chan boi den chu trong luc keo, cap doi voi body.is-col-resizing. */
+body.is-row-resizing {
+  cursor: row-resize;
+  user-select: none;
+}
+
+.detail-pane {
+  flex: 0 0 auto;
+  height: 24rem;
+  min-height: 6rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.detail-pane__head {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.875rem;
+}
+
+.detail-pane__title {
+  overflow-wrap: anywhere;
+}
+
+.detail-pane__tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.detail-pane__tab {
+  padding: 0.4rem 0.75rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.detail-pane__tab:hover {
+  color: var(--text);
+}
+
+.detail-pane__tab.is-active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--tab-active-border);
+}
+
+.detail-pane__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* BAY quen thuoc trong file nay: author CSS (display:flex) thang UA stylesheet,
+   thieu dong nay thi tab an van hien. */
+.detail-pane__body[hidden] {
+  display: none;
+}
+
+/* Giu nguyen xuong dong nhu Event Viewer. */
+.detail-pane__description {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.detail-pane__description.muted {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* Luoi 2 cot khi du rong: 13 dong meta xep mot cot la ly do phai cuon trong khung. */
+.detail-pane__meta {
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+  gap: 0.35rem 2rem;
+  align-content: start;
+}
+
+/* Trong khung chi tiet: nhan nam TREN gia tri thay vi ben trai. Gia tri o day hay la
+   duong dan dai, danh sach trigger/action nhieu dong - de nhan chiem 8rem ben trai thi
+   phan con lai qua hep, phai cuon ngang moi doc het. */
+.detail-pane__meta .meta-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.1rem;
+}
+
+.detail-pane__meta .meta-label {
+  flex: none;
+  font-size: 0.75rem;
+}
+
+.detail-pane__xml {
+  margin: 0;
+  padding: 1rem;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+/* Dat SAU .row--High de thang khi mot dong vua High vua dang chon. */
+tbody tr.is-selected,
+tbody tr.is-selected:hover {
+  background: var(--row-selected-bg);
+  box-shadow: inset 3px 0 0 var(--row-selected-border);
+}
+
+/* ---------------------------------------------------------- Saved Events (.evtx) */
+
+.saved-logs {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.saved-logs[hidden] {
+  display: none;
+}
+
+.saved-logs__title {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.saved-logs__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.saved-logs__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.saved-logs__open {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.saved-logs__open:hover {
+  text-decoration: underline;
+}
+
+.saved-logs__size {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The <a download> cung dung lop nay - can text-decoration/line-height de trong
+   giong <button>. */
+.btn--small {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  text-decoration: none;
+  line-height: 1.6;
+}
+
+.saved-logs__dir {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.saved-logs__dir code {
+  background: var(--code-bg);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------- Card link + Overview */
+
+.card__link {
+  margin-top: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card__link:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------- Hop thoai modeless
+   CO Y khong co lop phu (khac .modal): mo ra van thao tac duoc bang phia sau.
+   Vi vay cung KHONG dong khi bam ra ngoai - nguoi dung dang co y lam viec o do. */
+
+.dialog {
+  position: fixed;
+  top: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(46rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 6rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px var(--shadow);
+  overflow: hidden;
+}
+
+/* BAY quen thuoc: display:flex o tren thang UA stylesheet, thieu dong nay thi
+   [hidden] khong an duoc. */
+.dialog[hidden] {
+  display: none;
+}
+
+.dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.dialog__close {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dialog__close:hover {
+  color: var(--text);
+}
+
+.dialog__tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dialog__tab {
+  padding: 0.45rem 0.8rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.dialog__tab:hover {
+  color: var(--text);
+}
+
+.dialog__tab.is-active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--tab-active-border);
+}
+
+.dialog__body {
+  padding: 0.9rem 1rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.dialog__body[hidden] {
+  display: none;
+}
+
+.dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8125rem;
+  min-width: 0;
+}
+
+/* Control trong hop thoai duoc dung bang JS nen KHONG mang class - phai style theo
+   the. Thieu khoi nay thi chung an theo mac dinh trinh duyet: nho xiu va nen trang,
+   lech han voi theme toi. */
+.dialog input[type="text"],
+.dialog input[type="datetime-local"],
+.dialog input[type="number"],
+.dialog select,
+.dialog textarea {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.dialog textarea {
+  resize: vertical;
+  min-height: 3rem;
+}
+
+.dialog input:focus,
+.dialog select:focus,
+.dialog textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.dialog input[readonly] {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+
+/* Checkbox khong duoc keo rong 100% nhu cac control kia. */
+.dialog input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.dialog__label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.dialog__hint {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+}
+
+.dialog__check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.dialog__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Moi trigger/action la mot the con, xoa rieng duoc. */
+.dialog__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+/* .dialog__row .dialog__field {
+  flex: 1 1 5rem;
+} */
+
+.dialog__foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.dialog__status {
+  color: var(--danger);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.card__sub {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------- Bieu do Dashboard */
+
+/* Ba card deu nhau tren mot hang. minmax(0, 1fr) chu KHONG phai 1fr: 1fr co
+   min-width mac dinh la auto, nen SVG ben trong se day cot phinh ra khong deu. */
+.charts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/* Man hinh hep thi xep doc, khong ep 3 cot. */
+@media (max-width: 64rem) {
+  .charts {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Chiem het chieu ngang - dung cho dong thoi gian o duoi. */
+.chart-card--wide {
+  grid-column: 1 / -1;
+}
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  min-width: 0;
+}
+
+.chart-card__title {
+  display: block;
+  margin-bottom: 0.6rem;
+  font-size: 0.8125rem;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  /* Chan tren man hinh rat rong: khong co dong nay thi SVG giu ti le va phinh to
+     theo be rong card. */
+  max-height: 11rem;
+}
+
+.chart__grid {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+}
+
+/* SVG khong ke thua mau chu tu CSS cha - phai chi dinh fill. */
+.chart__label {
+  fill: var(--chart-axis);
+  font-size: 10px;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.chart-legend i {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-right: 0.3rem;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------- Thanh ngang co % */
+
+.barlist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* Card chi rong 1/3 man hinh nen nhan phai hep lai, khong thi thanh bar bi bop het. */
+.barlist__item {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+}
+
+.barlist__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.barlist__track {
+  height: 0.7rem;
+  background: var(--surface-alt);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.barlist__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.barlist__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-size: 0.7rem;
+}
+
+/* ---------------------------------------------------------- Dong thoi gian */
+
+/* Gioi han be rong danh sach thay vi keo dan het card: badge rui ro van THANG HANG
+   giua cac dong (vi moi dong cung mot luoi), ma khong bi day ra tan mep phai. */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 58rem;
+}
+
+/* Badge o cot cuoi (auto) nen moi dong deu ket thuc o cung mot vi tri -> thang hang.
+   Khoang cach toi mo ta do .timeline max-width quyet dinh, khong do noi dung tung
+   dong (dat justify-self:start se lam badge so le theo do dai mo ta). */
+.timeline__item {
+  display: grid;
+  grid-template-columns: 7rem 8rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline__item:hover {
+  background: var(--surface-alt);
+}
+
+.timeline__time {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline__host {
+  color: var(--text-muted);
+}
+
+.timeline__what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-health {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.ov-subtitle {
+  display: block;
+  margin: 0.9rem 0 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.ov-top {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.ov-chart {
+  width: 100%;
+  height: auto;
+  max-height: 9rem;
+}
+
+/* SVG khong ke thua mau chu tu CSS cha - phai chi dinh fill. */
+.ov-chart__label {
+  fill: var(--text-faint);
+  font-size: 10px;
+}
+
+.is-disabled-channel {
+  color: var(--text-faint);
 }

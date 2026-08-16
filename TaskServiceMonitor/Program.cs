@@ -47,10 +47,25 @@ builder.Services.AddSingleton<RiskScorer>();
 builder.Services.AddSingleton<RawXmlSampleWriter>();
 builder.Services.AddSingleton<EventQueue>();
 builder.Services.AddSingleton<EventNotifier>();
+builder.Services.AddSingleton<ChannelStatusRegistry>();
+
+// Doc log "theo yeu cau" cho tinh nang duyet log bat ky - tach khoi pipeline
+// curated o tren (EventQueue/EventPersistenceService/EventNotifier).
+builder.Services.AddSingleton<AdHocLogReader>();
+
+// Saved Events (.evtx): xuat / liet ke / xoa. Chua luon rao chan path traversal -
+// bat buoc vi ten file den thang tu URL ma app chay quyen Administrator.
+builder.Services.AddSingleton<SavedLogStore>();
 
 // Rao an toan cho thao tac ghi task/service. Doc thi khong gioi han.
-builder.Services.AddSingleton(new SafeNameGuard(
-    builder.Configuration["Management:WritablePrefix"] ?? "WinSentinel"));
+//   SafeNameGuard - duoc phep ghi len TEN nay khong?
+//   InputPolicy   - GIA TRI nhap vao (duong dan exe, tham so...) co hop le khong?
+// Hai lop tra loi hai cau hoi khac nhau, khong thay the nhau duoc.
+var managementOptions = builder.Configuration
+    .GetSection(ManagementOptions.SectionName).Get<ManagementOptions>() ?? new ManagementOptions();
+
+builder.Services.AddSingleton(new SafeNameGuard(managementOptions.WritablePrefix));
+builder.Services.AddSingleton(new InputPolicy(managementOptions));
 builder.Services.AddSingleton<ServiceManager>();
 builder.Services.AddSingleton<TaskManager>();
 
@@ -61,23 +76,35 @@ builder.Services.AddHostedService<EventPersistenceService>();
 
 var app = builder.Build();
 
-// Cham lai RiskLevel cho event da luu truoc khi co RiskScorer, roi thoat.
-//   dotnet run --project TaskServiceMonitor -- --rescore
-if (args.Contains("--rescore"))
+// Tinh lai cac cot dan xuat tu RawXml cho event da luu (RiskLevel + nhom Level/
+// TaskCategory/Keywords them o buoc 8), roi thoat. '--rescore' giu lai lam alias
+// vi ten cu da nam trong CLAUDE.md va trong thoi quen go lenh.
+//   dotnet run --project TaskServiceMonitor -- --backfill
+if (args.Contains("--backfill") || args.Contains("--rescore"))
 {
     using var scope = app.Services.CreateScope();
-    return await RiskRescoreTool.RunAsync(
+    return await BackfillTool.RunAsync(
         scope.ServiceProvider.GetRequiredService<MonitorDbContext>(),
+        scope.ServiceProvider.GetRequiredService<WindowsEventParser>(),
         scope.ServiceProvider.GetRequiredService<RiskScorer>());
 }
 
 // Dashboard tinh o wwwroot/. UseDefaultFiles phai dung TRUOC UseStaticFiles
 // thi "/" moi tra ve index.html.
 app.UseDefaultFiles();
-app.UseStaticFiles();
+
+// "no-cache" = van luu nhung bat buoc hoi lai server (ETag -> 304 neu khong doi).
+// Can vi index.html va app.js doi cung luc o buoc 8: trinh duyet lay HTML moi (12
+// cot) nhung dung app.js cu (ve 8 o) -> du lieu lech han mot cot, rat kho doan ra.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+        ctx.Context.Response.Headers.CacheControl = "no-cache"
+});
 
 app.MapEventEndpoints();
 app.MapManagementEndpoints();
+app.MapLogBrowseEndpoints();
 app.MapHub<MonitorHub>(MonitorHub.Route);
 
 app.Run();

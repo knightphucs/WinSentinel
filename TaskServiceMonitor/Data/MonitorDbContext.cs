@@ -47,10 +47,24 @@ public sealed class MonitorDbContext(DbContextOptions<MonitorDbContext> options)
         e.Property(x => x.TaskArguments).HasMaxLength(2048);
         e.Property(x => x.TaskRunAsUser).HasMaxLength(255);
         e.Property(x => x.TaskRunLevel).HasMaxLength(64);
+        e.Property(x => x.TaskInstanceId).HasMaxLength(64);
+        e.Property(x => x.TaskActionResultCode).HasMaxLength(32);
+
+        // Nhom hien thi kieu Event Viewer (buoc 8). TAT CA nullable - co y, xem ghi
+        // chu trong WindowsMonitorEvent: cot string non-null bi EF sinh
+        // defaultValue: "" va chuoi rong khong phai gia tri hop le de doc nguoc.
+        e.Property(x => x.LevelDisplayName).HasMaxLength(32);
+        e.Property(x => x.TaskCategoryName).HasMaxLength(255);
+        e.Property(x => x.OpcodeName).HasMaxLength(128);
+        e.Property(x => x.Keywords).HasMaxLength(255);
 
         // Noi dung dai - de kieu text, khong gioi han do dai.
         e.Property(x => x.RawXml).HasColumnType("text").IsRequired();
         e.Property(x => x.TaskContentXml).HasColumnType("text");
+
+        // Description la cau van do provider render ra, dai tuy y (co cai vai KB nhu
+        // event PowerShell 403 kem ca dong lenh) - khong dat gioi han do dai.
+        e.Property(x => x.Description).HasColumnType("text");
 
         // Npgsql map DateTime co Kind=Utc sang 'timestamp with time zone'.
         // Parser da bao dam luon tra ve UTC (xem WindowsEventParser.ReadTimeCreated).

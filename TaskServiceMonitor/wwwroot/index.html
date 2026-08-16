@@ -1,224 +1,1107 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="vi">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TaskServiceMonitor</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <header>
-    <h1>TaskServiceMonitor</h1>
-    <span id="status" class="status status--connecting">Đang kết nối…</span>
-    <span id="elevation" class="status status--offline" hidden></span>
-  </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TaskServiceMonitor</title>
+    <link rel="stylesheet" href="style.css" />
+    <script>
+      // Doc theme da luu TRUOC khi CSS ve, tranh nhay mau (sang -> toi) luc F5.
+      try {
+        var savedTheme = localStorage.getItem("theme");
+        if (savedTheme === "light" || savedTheme === "dark") {
+          document.documentElement.setAttribute("data-theme", savedTheme);
+        }
+      } catch {
+        /* localStorage co the bi chan - bo qua, dung mac dinh he thong. */
+      }
+    </script>
+  </head>
+  <body>
+    <header>
+      <h1>TaskServiceMonitor</h1>
+      <span id="status" class="status status--connecting">Đang kết nối…</span>
+      <span id="elevation" class="status status--offline" hidden></span>
+      <button type="button" id="theme-toggle" class="btn theme-toggle">
+        Giao diện: Sáng
+      </button>
+    </header>
 
-  <nav class="tabs">
-    <button type="button" class="tab is-active" data-tab="dashboard">Dashboard</button>
-    <button type="button" class="tab" data-tab="tasks">Scheduled Tasks</button>
-    <button type="button" class="tab" data-tab="services">Services</button>
-  </nav>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <nav class="tabs">
+          <button type="button" class="tab is-active" data-tab="dashboard">
+            Dashboard
+          </button>
+          <button type="button" class="tab" data-tab="tasks">
+            Scheduled Tasks
+          </button>
+          <button type="button" class="tab" data-tab="services">
+            Services
+          </button>
+          <!-- Mo tu nut "Xem chi tiet" tren card Dashboard. Van de o sidebar de quay
+             lai duoc, va de activateTab co nut ma danh dau is-active. -->
+          <button type="button" class="tab" data-tab="insight">Phân tích</button>
 
-  <div id="toast" class="toast" hidden></div>
+          <!-- Cay phan cap kieu Event Viewer: nut folder KHONG mang class "tab" nen
+             khong bi co che chuyen-tab hien co trong app.js bat vao; cac leaf ben
+             trong CO mang class "tab" nen dung nguyen co che do, khong can sua
+             app.js cho phan chuyen tab. disclosure.js chi lo phan xoe/dong folder. -->
+          <div class="tree-group">
+            <button type="button" class="tree-toggle" aria-expanded="true">
+              <svg
+                class="icon tree-caret"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 5l5 5 5-5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              Nhật ký sự kiện
+            </button>
+            <div class="tree-children">
+              <button
+                type="button"
+                class="tab tab--leaf"
+                data-tab="logs-security"
+              >
+                Security
+              </button>
+              <button
+                type="button"
+                class="tab tab--leaf"
+                data-tab="logs-system"
+              >
+                System
+              </button>
+              <button
+                type="button"
+                class="tab tab--leaf"
+                data-tab="logs-taskscheduler"
+              >
+                TaskScheduler
+              </button>
+              <!-- Channel da ghim (logsbrowse.js render dong vao day, luu localStorage) -
+                 dat TRUOC nut "Duyet log khac..." de nut do luon nam duoi cung
+                 du ghim them bao nhieu channel. -->
+              <div id="pinned-channels"></div>
+              <button
+                type="button"
+                class="tab tab--leaf"
+                data-tab="logs-browse"
+              >
+                Duyệt log khác…
+              </button>
+            </div>
+          </div>
+        </nav>
+      </aside>
 
-  <section id="panel-dashboard" class="panel">
+      <main class="content">
+        <div id="toast" class="toast" hidden></div>
 
-  <section class="cards">
-    <div class="card">
-      <span class="card__label">Event 1 giờ gần nhất</span>
-      <span class="card__value" id="card-hour">0</span>
+        <section id="panel-dashboard" class="panel">
+          <section class="cards">
+            <div class="card">
+              <span class="card__label">Máy đang gửi event</span>
+              <span class="card__value" id="card-hosts">0</span>
+              <button type="button" class="card__link" data-insight="hosts">
+                Xem chi tiết
+              </button>
+            </div>
+            <div class="card">
+              <span class="card__label">Tổng event (toàn CSDL)</span>
+              <span class="card__value" id="card-total">0</span>
+            </div>
+            <div class="card card--danger">
+              <span class="card__label">Rủi ro cao hôm nay</span>
+              <span class="card__value" id="card-high">0</span>
+              <button type="button" class="card__link" data-insight="high">
+                Xem chi tiết
+              </button>
+            </div>
+            <div class="card">
+              <span class="card__label">Channel đang nhận log</span>
+              <span class="card__value" id="card-online">0</span>
+              <span class="card__sub" id="card-online-note"></span>
+            </div>
+          </section>
+
+          <p class="note">
+            "Máy" và "Rủi ro cao hôm nay" tính từ tối đa 200 event gần nhất giữ ở
+            trình duyệt (xấp xỉ). "Tổng event" và các biểu đồ bên dưới query
+            <strong>toàn bộ CSDL</strong> — nên hai nhóm số này có thể lệch nhau.
+          </p>
+
+          <!-- Bieu do len tren, 3 khoi bang cu giu nguyen nhung xuong duoi. -->
+          <section class="charts">
+            <div class="chart-card">
+              <strong class="chart-card__title">Event theo giờ (24 giờ qua)</strong>
+              <div id="chart-hourly"></div>
+              <div class="chart-legend">
+                <span><i style="background: var(--chart-high)"></i>High</span>
+                <span><i style="background: var(--chart-medium)"></i>Medium</span>
+                <span><i style="background: var(--chart-low)"></i>Low</span>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <strong class="chart-card__title">Phân bố rủi ro</strong>
+              <div id="chart-risk"></div>
+            </div>
+
+            <div class="chart-card">
+              <strong class="chart-card__title">Event theo máy</strong>
+              <div id="chart-hosts"></div>
+            </div>
+
+            <div class="chart-card chart-card--wide">
+              <strong class="chart-card__title">Hoạt động gần đây</strong>
+              <div id="chart-timeline" class="timeline"></div>
+            </div>
+          </section>
+
+          <!-- Overview and Summary kieu Event Viewer - tung khoi xoe/dong duoc rieng,
+       do rong gioi han (.ov) khong keo dai het chieu rong trang nhu bang du
+       lieu chinh ben duoi. Bang rui ro query DB that (chinh xac ca khung "7
+       ngay"); bang channel doc lai mang `events` client (giong 3 leaf trong
+       "Nhat ky su kien" - khong goi API rieng). -->
+          <section class="ov">
+            <div class="ov-panel">
+              <button
+                type="button"
+                class="ov-panel__header"
+                aria-expanded="true"
+              >
+                <span>Overview</span>
+                <svg
+                  class="icon ov-caret"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 5l5 5 5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <!-- insight.js ve vao day: tinh trang he thong + bieu do 24 gio.
+                 KHAC 3 card o tren - khoi nay query DB that, khong dung mang
+                 ~200 event tren client. -->
+              <div class="ov-panel__body" id="overview-body">
+                <p class="muted">Đang tải tình trạng hệ thống…</p>
+              </div>
+            </div>
+
+            <div class="ov-panel">
+              <button
+                type="button"
+                class="ov-panel__header"
+                aria-expanded="true"
+              >
+                <span>Tổng hợp theo mức rủi ro</span>
+                <svg
+                  class="icon ov-caret"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 5l5 5 5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div class="ov-panel__body">
+                <div class="table-wrap">
+                  <table id="summary-table">
+                    <thead>
+                      <tr>
+                        <th>Rủi ro</th>
+                        <th>Event ID</th>
+                        <th>Source</th>
+                        <th>Log</th>
+                        <th>1 giờ</th>
+                        <th>24 giờ</th>
+                        <th>7 ngày</th>
+                      </tr>
+                    </thead>
+                    <tbody id="summary-body">
+                      <tr>
+                        <td colspan="7" class="muted">Đang tải…</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="ov-panel">
+              <button
+                type="button"
+                class="ov-panel__header"
+                aria-expanded="true"
+              >
+                <span>Log Summary</span>
+                <svg
+                  class="icon ov-caret"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 5l5 5 5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div class="ov-panel__body">
+                <!-- Khac ban cu (dem tu mang client): panel nay doc /api/system/channels -
+             trang thai SUBSCRIBE THAT cua tung channel o server, phan biet duoc
+             "subscribe duoc nhung khong doc duoc event" (loi thieu quyen, thuong
+             gap voi Security) voi "dang nhan binh thuong". -->
+                <div class="table-wrap">
+                  <table id="log-summary-table">
+                    <thead>
+                      <tr>
+                        <th>Log Name</th>
+                        <th>Trạng thái</th>
+                        <th>Event đã nhận</th>
+                        <th title="Cursor đo lúc app khởi động — đóng băng, không đổi">
+                          Cursor lúc khởi động
+                        </th>
+                        <th title="RecordId của event mới nhất nhận được trong phiên này">
+                          RecordId mới nhất
+                        </th>
+                        <th>Thời gian cập nhật</th>
+                      </tr>
+                    </thead>
+                    <tbody id="log-summary-body">
+                      <tr>
+                        <td colspan="6" class="muted">Đang tải…</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="filters">
+            <div class="filter-menu">
+              <button
+                type="button"
+                class="btn filter-toggle"
+                aria-expanded="false"
+              >
+                <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M1.5 2.5h13L9.5 8.2V13l-3 1.8V8.2z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                Bộ lọc
+                <span class="filter-badge" hidden>0</span>
+              </button>
+              <div class="filter-panel" hidden>
+                <label>
+                  Máy
+                  <select id="filter-host">
+                    <option value="">Tất cả</option>
+                  </select>
+                </label>
+                <label>
+                  Loại đối tượng
+                  <select id="filter-type">
+                    <option value="">Tất cả</option>
+                    <option value="ScheduledTask">Scheduled Task</option>
+                    <option value="Service">Service</option>
+                  </select>
+                </label>
+                <label>
+                  Rủi ro
+                  <select id="filter-risk">
+                    <option value="">Tất cả</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div
+              class="custom-views"
+              data-scope="dashboard"
+              data-view-fields="filter-host,filter-type,filter-risk"
+            ></div>
+            <span id="count" class="count"></span>
+          </section>
+
+          <div class="table-wrap">
+            <table id="events">
+              <thead>
+                <tr>
+                  <th>Rủi ro</th>
+                  <th>Thời gian</th>
+                  <th>Máy</th>
+                  <th>Loại</th>
+                  <th>Tên</th>
+                  <th>Hành vi</th>
+                  <th>Người thực hiện</th>
+                </tr>
+              </thead>
+              <tbody id="events-body"></tbody>
+            </table>
+          </div>
+
+          <p id="empty" class="empty">Chưa có event nào.</p>
+        </section>
+
+        <!-- ============================================================ Tab Tasks -->
+        <section id="panel-tasks" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Scheduled Tasks</strong>
+            <span id="tasks-count" class="count"></span>
+            <button type="button" id="task-dialog-open" class="btn btn--primary">
+              Create Task…
+            </button>
+            <button type="button" id="tasks-refresh" class="btn">
+              Tải lại
+            </button>
+          </div>
+
+          <p class="note">
+            Tạo/sửa task bằng nút "Create Task…" ở trên — hộp thoại 5 tab, đủ
+            Trigger / Action / Principal / Settings. Tên chưa có → tạo mới
+            (event 4698), tên đã có → ghi đè (event 4702).
+          </p>
+
+          <div class="filters">
+            <label
+              >Tìm tên<input
+                id="tasks-search"
+                class="search"
+                placeholder="lọc theo tên hoặc đường dẫn…"
+            /></label>
+
+            <div class="filter-menu">
+              <button
+                type="button"
+                class="btn filter-toggle"
+                aria-expanded="false"
+              >
+                <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M1.5 2.5h13L9.5 8.2V13l-3 1.8V8.2z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                Bộ lọc
+                <span class="filter-badge" hidden>0</span>
+              </button>
+              <div class="filter-panel" hidden>
+                <label
+                  >Trạng thái
+                  <select id="tasks-filter-state">
+                    <option value="">Tất cả</option>
+                    <option value="ready">Ready</option>
+                    <option value="running">Running</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </label>
+                <label
+                  >Kiểu action
+                  <select id="tasks-filter-action">
+                    <option value="">Tất cả</option>
+                    <option value="Exec">Exec</option>
+                    <option value="ComHandler">ComHandler</option>
+                  </select>
+                </label>
+                <label class="check">
+                  <input type="checkbox" id="tasks-only-writable" /> Chỉ hiện
+                  cái thao tác được
+                </label>
+              </div>
+            </div>
+
+            <label
+              >Sắp xếp
+              <select id="tasks-sort">
+                <option value="name">Tên (A-Z)</option>
+                <option value="recent">Mới nhất (event 4698-4702)</option>
+              </select>
+            </label>
+
+            <div
+              class="custom-views"
+              data-scope="tasks"
+              data-view-fields="tasks-search,tasks-filter-state,tasks-filter-action,tasks-only-writable,tasks-sort"
+            ></div>
+          </div>
+
+          <div class="feed">
+            <div class="feed__head">
+              Event vừa sinh ra hôm nay (4697/7040/7045)
+            </div>
+            <ul id="tasks-feed" class="feed__list">
+              <li class="feed__empty">
+                Chưa có. Thử tạo hoặc bật/tắt một task ở trên.
+              </li>
+            </ul>
+          </div>
+
+          <div class="table-wrap">
+            <table id="tasks-table">
+              <thead>
+                <tr>
+                  <th>Tên</th>
+                  <th>Đường dẫn</th>
+                  <th>Trạng thái</th>
+                  <th>Lệnh</th>
+                  <th>Lần chạy cuối</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="tasks-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ============================================================ Tab Services -->
+        <section id="panel-services" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Services</strong>
+            <span id="services-count" class="count"></span>
+            <button type="button" id="service-dialog-open" class="btn btn--primary">
+              Tạo Service…
+            </button>
+            <button type="button" id="services-refresh" class="btn">
+              Tải lại
+            </button>
+          </div>
+
+          <p class="note">
+            Tạo service bằng nút "Tạo Service…" ở trên — có thêm Mô tả,
+            Dependencies và tài khoản chạy. Tạo service sinh <strong>hai</strong>
+            event ở hai channel khác nhau: 7045 (System) và 4697 (Security).
+          </p>
+
+          <div class="filters">
+            <label
+              >Tìm tên<input
+                id="services-search"
+                class="search"
+                placeholder="lọc theo tên hiển thị…"
+            /></label>
+
+            <div class="filter-menu">
+              <button
+                type="button"
+                class="btn filter-toggle"
+                aria-expanded="false"
+              >
+                <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M1.5 2.5h13L9.5 8.2V13l-3 1.8V8.2z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                Bộ lọc
+                <span class="filter-badge" hidden>0</span>
+              </button>
+              <div class="filter-panel" hidden>
+                <label
+                  >Trạng thái
+                  <select id="services-filter-state">
+                    <option value="">Tất cả</option>
+                    <option value="running">Running</option>
+                    <option value="stopped">Stopped</option>
+                  </select>
+                </label>
+                <label
+                  >Start type
+                  <select id="services-filter-starttype">
+                    <option value="">Tất cả</option>
+                    <option value="auto start">auto start</option>
+                    <option value="demand start">demand start</option>
+                    <option value="disabled">disabled</option>
+                    <option value="system start">system start</option>
+                    <option value="boot start">boot start</option>
+                  </select>
+                </label>
+                <label class="check">
+                  <input type="checkbox" id="services-only-writable" /> Chỉ hiện
+                  cái thao tác được
+                </label>
+              </div>
+            </div>
+
+            <label
+              >Sắp xếp
+              <select id="services-sort">
+                <option value="name">Tên (A-Z)</option>
+                <option value="recent">Mới nhất (event 4697/7040/7045)</option>
+              </select>
+            </label>
+
+            <div
+              class="custom-views"
+              data-scope="services"
+              data-view-fields="services-search,services-filter-state,services-filter-starttype,services-only-writable,services-sort"
+            ></div>
+          </div>
+
+          <div class="feed">
+            <div class="feed__head">
+              Event vừa sinh ra hôm nay (4697/7040/7045)
+            </div>
+            <ul id="services-feed" class="feed__list">
+              <li class="feed__empty">
+                Chưa có. Thử tạo service hoặc đổi start type ở trên.
+              </li>
+            </ul>
+          </div>
+
+          <div class="table-wrap">
+            <table id="services-table">
+              <thead>
+                <tr>
+                  <th>Tên</th>
+                  <th>Tên hiển thị</th>
+                  <th>Trạng thái</th>
+                  <th>Start type</th>
+                  <th>Binary</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="services-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ============================================================ Phan tich
+       Mo tu nut "Xem chi tiet" tren card. Dung LAI mang `events` ma 3 card dang
+       dem (window.getEvents) nen con so o day luon khop voi card - xem insight.js. -->
+        <section id="panel-insight" class="panel" hidden>
+          <div class="toolbar">
+            <strong id="insight-title">Phân tích</strong>
+            <span id="insight-count" class="count"></span>
+          </div>
+          <p class="note" id="insight-note"></p>
+          <div class="table-wrap">
+            <table id="insight-table">
+              <thead id="insight-head"></thead>
+              <tbody id="insight-body"></tbody>
+            </table>
+          </div>
+          <p id="insight-empty" class="empty">
+            Bấm "Xem chi tiết" trên một card ở Dashboard.
+          </p>
+        </section>
+
+        <!-- ============================================================ Nhat ky su kien
+       Mac dinh doc LAI mang `events` da co san tren client (che do "App da bat").
+       Chuyen sang "Toan bo channel" thi doc live qua /api/logs/browse - xem
+       loadLeafChannel trong app.js. -->
+        <section id="panel-logs-security" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Security</strong>
+            <span id="logs-security-count" class="count"></span>
+          </div>
+          <p class="note">
+            Field riêng của channel Security mà Dashboard không hiện: cột "Chi
+            tiết" (lệnh Exec / CLSID ComHandler, hoặc binary nếu là event cài
+            service 4697).
+          </p>
+
+          <div class="filters">
+            <input
+              id="logs-security-search"
+              class="search"
+              type="search"
+              placeholder="Tìm trong tên, hành vi, mô tả…"
+            />
+            <label
+              >Nguồn
+              <select id="logs-security-mode">
+                <option value="captured">App đã bắt</option>
+                <option value="channel">Toàn bộ channel</option>
+              </select>
+            </label>
+            <div class="filter-menu">
+              <button type="button" class="btn filter-toggle" aria-expanded="false">
+                Bộ lọc
+                <span class="filter-badge" hidden>0</span>
+              </button>
+              <div class="filter-panel" hidden>
+                <label
+                  >Event ID
+                  <input id="logs-security-eventid" type="number" min="1" placeholder="mọi ID" />
+                </label>
+                <label
+                  >Số dòng (chế độ "Toàn bộ channel")
+                  <input id="logs-security-count-input" type="number" min="1" max="200" value="50" />
+                </label>
+              </div>
+            </div>
+            <div class="filters__actions">
+              <button type="button" id="logs-security-reload" class="btn btn--primary">Tải lại</button>
+              <button type="button" id="logs-security-export" class="btn">Lưu log…</button>
+              <label
+                >Định dạng
+                <select id="logs-security-format">
+                  <option value="evtx">.evtx</option>
+                  <option value="xml">XML</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </label>
+              <button type="button" id="logs-security-export-selected" class="btn">
+                Lưu event đang chọn…
+              </button>
+              <div
+                class="custom-views"
+                data-scope="logs-security"
+                data-view-fields="logs-security-search,logs-security-mode,logs-security-eventid,logs-security-count-input"
+              ></div>
+            </div>
+          </div>
+          <!-- Bang o tren, chi tiet o duoi, keo duoc thanh giua - giong Event Viewer.
+             Thu tu 3 phan tu con LA HOP DONG voi detailpane.js: no tim thanh keo
+             qua previousElementSibling cua #<prefix>-detail. Doi thu tu se hong. -->
+          <div class="split">
+            <div class="split__top">
+              <div class="table-wrap">
+                <table id="logs-security-table">
+                  <thead>
+                    <tr>
+                      <th>Rủi ro</th>
+                      <th>Level</th>
+                      <th>Thời gian</th>
+                      <th>Source</th>
+                      <th>Event ID</th>
+                      <th>Task Category</th>
+                      <th>Máy</th>
+                      <th>Loại</th>
+                      <th>Tên</th>
+                      <th>Hành vi</th>
+                      <th>Chi tiết</th>
+                      <th>Người thực hiện</th>
+                    </tr>
+                  </thead>
+                  <tbody id="logs-security-body"></tbody>
+                </table>
+              </div>
+              <p id="logs-security-empty" class="empty">Chưa có event nào.</p>
+            </div>
+            <div
+              class="split__bar"
+              role="separator"
+              aria-orientation="horizontal"
+              title="Kéo để đổi chiều cao khung chi tiết"
+            ></div>
+            <div id="logs-security-detail" class="detail-pane"></div>
+          </div>
+        </section>
+
+        <section id="panel-logs-system" class="panel" hidden>
+          <div class="toolbar">
+            <strong>System</strong>
+            <span id="logs-system-count" class="count"></span>
+          </div>
+          <p class="note">
+            Field riêng của channel System mà Dashboard không hiện: đường dẫn
+            binary và start type (cũ → mới, riêng event 7040).
+          </p>
+
+          <div class="filters">
+            <input
+              id="logs-system-search"
+              class="search"
+              type="search"
+              placeholder="Tìm trong tên, hành vi, mô tả…"
+            />
+            <label
+              >Nguồn
+              <select id="logs-system-mode">
+                <option value="captured">App đã bắt</option>
+                <option value="channel">Toàn bộ channel</option>
+              </select>
+            </label>
+            <div class="filter-menu">
+              <button type="button" class="btn filter-toggle" aria-expanded="false">
+                Bộ lọc
+                <span class="filter-badge" hidden>0</span>
+              </button>
+              <div class="filter-panel" hidden>
+                <label
+                  >Event ID
+                  <input id="logs-system-eventid" type="number" min="1" placeholder="mọi ID" />
+                </label>
+                <label
+                  >Số dòng (chế độ "Toàn bộ channel")
+                  <input id="logs-system-count-input" type="number" min="1" max="200" value="50" />
+                </label>
+              </div>
+            </div>
+            <div class="filters__actions">
+              <button type="button" id="logs-system-reload" class="btn btn--primary">Tải lại</button>
+              <button type="button" id="logs-system-export" class="btn">Lưu log…</button>
+              <label
+                >Định dạng
+                <select id="logs-system-format">
+                  <option value="evtx">.evtx</option>
+                  <option value="xml">XML</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </label>
+              <button type="button" id="logs-system-export-selected" class="btn">
+                Lưu event đang chọn…
+              </button>
+              <div
+                class="custom-views"
+                data-scope="logs-system"
+                data-view-fields="logs-system-search,logs-system-mode,logs-system-eventid,logs-system-count-input"
+              ></div>
+            </div>
+          </div>
+
+          <div class="split">
+            <div class="split__top">
+              <div class="table-wrap">
+                <table id="logs-system-table">
+                  <thead>
+                    <tr>
+                      <th>Rủi ro</th>
+                      <th>Level</th>
+                      <th>Thời gian</th>
+                      <th>Source</th>
+                      <th>Event ID</th>
+                      <th>Task Category</th>
+                      <th>Máy</th>
+                      <th>Tên</th>
+                      <th>Hành vi</th>
+                      <th>Binary</th>
+                      <th>Start type</th>
+                      <th>Người thực hiện</th>
+                    </tr>
+                  </thead>
+                  <tbody id="logs-system-body"></tbody>
+                </table>
+              </div>
+              <p id="logs-system-empty" class="empty">Chưa có event nào.</p>
+            </div>
+            <div
+              class="split__bar"
+              role="separator"
+              aria-orientation="horizontal"
+              title="Kéo để đổi chiều cao khung chi tiết"
+            ></div>
+            <div id="logs-system-detail" class="detail-pane"></div>
+          </div>
+        </section>
+
+        <section id="panel-logs-taskscheduler" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Microsoft-Windows-TaskScheduler/Operational</strong>
+            <span id="logs-taskscheduler-count" class="count"></span>
+          </div>
+          <p class="note">
+            Field riêng của channel này mà Dashboard không hiện: Instance ID và
+            mã kết quả (ResultCode) — chỉ có ở event 200/201, dùng đối chiếu
+            "action bắt đầu" với "action hoàn thành" của CÙNG một lần chạy.
+          </p>
+
+          <div class="filters">
+            <input
+              id="logs-taskscheduler-search"
+              class="search"
+              type="search"
+              placeholder="Tìm trong tên, hành vi, mô tả…"
+            />
+            <label
+              >Nguồn
+              <select id="logs-taskscheduler-mode">
+                <option value="captured">App đã bắt</option>
+                <option value="channel">Toàn bộ channel</option>
+              </select>
+            </label>
+            <div class="filter-menu">
+              <button type="button" class="btn filter-toggle" aria-expanded="false">
+                Bộ lọc
+                <span class="filter-badge" hidden>0</span>
+              </button>
+              <div class="filter-panel" hidden>
+                <label
+                  >Event ID
+                  <input id="logs-taskscheduler-eventid" type="number" min="1" placeholder="mọi ID" />
+                </label>
+                <label
+                  >Số dòng (chế độ "Toàn bộ channel")
+                  <input id="logs-taskscheduler-count-input" type="number" min="1" max="200" value="50" />
+                </label>
+              </div>
+            </div>
+            <div class="filters__actions">
+              <button type="button" id="logs-taskscheduler-reload" class="btn btn--primary">Tải lại</button>
+              <button type="button" id="logs-taskscheduler-export" class="btn">Lưu log…</button>
+              <label
+                >Định dạng
+                <select id="logs-taskscheduler-format">
+                  <option value="evtx">.evtx</option>
+                  <option value="xml">XML</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </label>
+              <button type="button" id="logs-taskscheduler-export-selected" class="btn">
+                Lưu event đang chọn…
+              </button>
+              <div
+                class="custom-views"
+                data-scope="logs-taskscheduler"
+                data-view-fields="logs-taskscheduler-search,logs-taskscheduler-mode,logs-taskscheduler-eventid,logs-taskscheduler-count-input"
+              ></div>
+            </div>
+          </div>
+          <div class="split">
+            <div class="split__top">
+              <div class="table-wrap">
+                <table id="logs-taskscheduler-table">
+                  <thead>
+                    <tr>
+                      <th>Rủi ro</th>
+                      <th>Level</th>
+                      <th>Thời gian</th>
+                      <th>Source</th>
+                      <th>Event ID</th>
+                      <th>Task Category</th>
+                      <th>Máy</th>
+                      <th>Tên</th>
+                      <th>Hành vi</th>
+                      <th>Lệnh</th>
+                      <th>Instance ID</th>
+                      <th>Kết quả</th>
+                      <th>Người thực hiện</th>
+                    </tr>
+                  </thead>
+                  <tbody id="logs-taskscheduler-body"></tbody>
+                </table>
+              </div>
+              <p id="logs-taskscheduler-empty" class="empty">Chưa có event nào.</p>
+            </div>
+            <div
+              class="split__bar"
+              role="separator"
+              aria-orientation="horizontal"
+              title="Kéo để đổi chiều cao khung chi tiết"
+            ></div>
+            <div id="logs-taskscheduler-detail" class="detail-pane"></div>
+          </div>
+        </section>
+
+        <!-- ============================================================ Duyet log bat ky
+       KHONG dung mang `events` co san - goi rieng /api/logs/browse (pull, on-demand),
+       tach han khoi pipeline curated. Xem logsbrowse.js. -->
+        <section id="panel-logs-browse" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Duyệt log khác…</strong>
+            <span id="logs-browse-count" class="count"></span>
+          </div>
+
+          <p class="note">
+            Đọc trực tiếp theo yêu cầu (không realtime, không lưu DB) — giống
+            cách Event Viewer chỉ đọc một log khi bạn mở nó ra.
+          </p>
+
+          <div class="filters">
+            <label
+              >Channel
+              <select id="logs-browse-channel"></select>
+            </label>
+            <label
+              >Event ID (tuỳ chọn)
+              <input
+                id="logs-browse-eventid"
+                class="search"
+                type="number"
+                min="1"
+                placeholder="để trống = mọi ID"
+              />
+            </label>
+            <label
+              >Số dòng
+              <input
+                id="logs-browse-count-input"
+                class="search"
+                type="number"
+                min="1"
+                max="200"
+                value="50"
+              />
+            </label>
+            <button
+              type="button"
+              id="logs-browse-load"
+              class="btn btn--primary"
+            >
+              Tải
+            </button>
+            <div class="filters__actions">
+              <button
+                type="button"
+                id="logs-browse-pin"
+                class="btn"
+                title="Thêm channel đang chọn vào sidebar để mở nhanh lần sau"
+              >
+                Ghim vào sidebar
+              </button>
+              <button
+                type="button"
+                id="logs-browse-export"
+                class="btn"
+                title="Lưu channel đang chọn thành file .evtx trên máy chạy app"
+              >
+                Lưu log…
+              </button>
+              <label
+                >Định dạng
+                <select id="logs-browse-format">
+                  <option value="evtx">.evtx</option>
+                  <option value="xml">XML</option>
+                  <option value="csv">CSV</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                id="logs-browse-export-selected"
+                class="btn"
+                title="Ctrl+click / Shift+click để chọn nhiều dòng"
+              >
+                Lưu event đang chọn…
+              </button>
+            </div>
+          </div>
+
+          <!-- Danh sach file .evtx da luu. An khi chua co file nao. -->
+          <div id="saved-logs" class="saved-logs" hidden>
+            <strong class="saved-logs__title">File log đã lưu</strong>
+            <p class="saved-logs__dir">
+              Thư mục trên máy chạy app:
+              <code id="saved-logs-dir">…</code>
+            </p>
+            <ul id="saved-logs-list" class="saved-logs__list"></ul>
+          </div>
+
+          <div class="split">
+            <div class="split__top">
+              <div class="table-wrap">
+                <table id="logs-browse-table">
+                  <thead>
+                    <tr>
+                      <th>Rủi ro</th>
+                      <th>Level</th>
+                      <th>Thời gian</th>
+                      <th>Source</th>
+                      <th>Event ID</th>
+                      <th>Task Category</th>
+                      <th>Máy</th>
+                      <th>Channel</th>
+                      <th>Mô tả</th>
+                      <th>Người thực hiện</th>
+                    </tr>
+                  </thead>
+                  <tbody id="logs-browse-body"></tbody>
+                </table>
+              </div>
+              <p id="logs-browse-empty" class="empty">
+                Chọn channel rồi bấm "Tải".
+              </p>
+            </div>
+            <div
+              class="split__bar"
+              role="separator"
+              aria-orientation="horizontal"
+              title="Kéo để đổi chiều cao khung chi tiết"
+            ></div>
+            <div id="logs-browse-detail" class="detail-pane"></div>
+          </div>
+        </section>
+      </main>
     </div>
-    <div class="card">
-      <span class="card__label">Máy đang gửi event</span>
-      <span class="card__value" id="card-hosts">0</span>
-    </div>
-    <div class="card card--danger">
-      <span class="card__label">Rủi ro cao hôm nay</span>
-      <span class="card__value" id="card-high">0</span>
-    </div>
-  </section>
 
-  <p class="note">
-    Số liệu tính từ tối đa 200 event gần nhất đang giữ ở trình duyệt — là con số
-    xấp xỉ, không phải thống kê toàn bộ CSDL.
-  </p>
-
-  <section class="filters">
-    <label>
-      Máy
-      <select id="filter-host"><option value="">Tất cả</option></select>
-    </label>
-    <label>
-      Loại đối tượng
-      <select id="filter-type">
-        <option value="">Tất cả</option>
-        <option value="ScheduledTask">Scheduled Task</option>
-        <option value="Service">Service</option>
-      </select>
-    </label>
-    <label>
-      Rủi ro
-      <select id="filter-risk">
-        <option value="">Tất cả</option>
-        <option value="High">High</option>
-        <option value="Medium">Medium</option>
-        <option value="Low">Low</option>
-      </select>
-    </label>
-    <span id="count" class="count"></span>
-  </section>
-
-  <table id="events">
-    <thead>
-      <tr>
-        <th>Rủi ro</th>
-        <th>Thời gian</th>
-        <th>Máy</th>
-        <th>Loại</th>
-        <th>Tên</th>
-        <th>Hành vi</th>
-        <th>Người thực hiện</th>
-      </tr>
-    </thead>
-    <tbody id="events-body"></tbody>
-  </table>
-
-  <p id="empty" class="empty">Chưa có event nào.</p>
-  </section>
-
-  <!-- ============================================================ Tab Tasks -->
-  <section id="panel-tasks" class="panel" hidden>
-    <div class="toolbar">
-      <strong>Scheduled Tasks</strong>
-      <span id="tasks-count" class="count"></span>
-      <button type="button" id="tasks-refresh" class="btn">Tải lại</button>
-    </div>
-
-    <form id="task-form" class="create-form">
-      <label>Tên task<input name="name" placeholder="WinSentinelDemo" required /></label>
-      <label>Lệnh chạy<input name="command" value="cmd.exe" required /></label>
-      <label>Tham số<input name="arguments" placeholder="/c echo hello" /></label>
-      <button type="submit" class="btn btn--primary">Tạo / ghi đè</button>
-      <span class="hint">Tên chưa có → tạo mới (4698). Tên đã có → ghi đè (4702).</span>
-    </form>
-
-    <div class="filters">
-      <label>Tìm tên<input id="tasks-search" class="search" placeholder="lọc theo tên hoặc đường dẫn…" /></label>
-      <label>Trạng thái
-        <select id="tasks-filter-state">
-          <option value="">Tất cả</option>
-          <option value="ready">Ready</option>
-          <option value="running">Running</option>
-          <option value="disabled">Disabled</option>
-        </select>
-      </label>
-      <label>Kiểu action
-        <select id="tasks-filter-action">
-          <option value="">Tất cả</option>
-          <option value="Exec">Exec</option>
-          <option value="ComHandler">ComHandler</option>
-        </select>
-      </label>
-      <label class="check">
-        <input type="checkbox" id="tasks-only-writable" /> Chỉ hiện cái thao tác được
-      </label>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Tên</th><th>Đường dẫn</th><th>Trạng thái</th>
-          <th>Lệnh</th><th>Lần chạy cuối</th><th>Thao tác</th>
-        </tr>
-      </thead>
-      <tbody id="tasks-body"></tbody>
-    </table>
-
-    <div class="feed">
-      <div class="feed__head">Event vừa sinh ra — không cần sang tab Dashboard</div>
-      <ul id="tasks-feed" class="feed__list">
-        <li class="feed__empty">Chưa có. Thử tạo hoặc bật/tắt một task ở trên.</li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- ============================================================ Tab Services -->
-  <section id="panel-services" class="panel" hidden>
-    <div class="toolbar">
-      <strong>Services</strong>
-      <span id="services-count" class="count"></span>
-      <button type="button" id="services-refresh" class="btn">Tải lại</button>
-    </div>
-
-    <form id="service-form" class="create-form">
-      <label>Tên service<input name="name" placeholder="WinSentinelDemoSvc" required /></label>
-      <label>Đường dẫn binary<input name="binaryPath" value="C:\Windows\System32\snmptrap.exe" required /></label>
-      <label>Start type
-        <select name="startType">
-          <option>demand start</option>
-          <option>auto start</option>
-          <option>disabled</option>
-        </select>
-      </label>
-      <button type="submit" class="btn btn--primary">Tạo service</button>
-    </form>
-
-    <div class="filters">
-      <label>Tìm tên<input id="services-search" class="search" placeholder="lọc theo tên hiển thị…" /></label>
-      <label>Trạng thái
-        <select id="services-filter-state">
-          <option value="">Tất cả</option>
-          <option value="running">Running</option>
-          <option value="stopped">Stopped</option>
-        </select>
-      </label>
-      <label>Start type
-        <select id="services-filter-starttype">
-          <option value="">Tất cả</option>
-          <option value="auto start">auto start</option>
-          <option value="demand start">demand start</option>
-          <option value="disabled">disabled</option>
-          <option value="system start">system start</option>
-          <option value="boot start">boot start</option>
-        </select>
-      </label>
-      <label class="check">
-        <input type="checkbox" id="services-only-writable" /> Chỉ hiện cái thao tác được
-      </label>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Tên</th><th>Tên hiển thị</th><th>Trạng thái</th>
-          <th>Start type</th><th>Binary</th><th>Thao tác</th>
-        </tr>
-      </thead>
-      <tbody id="services-body"></tbody>
-    </table>
-
-    <div class="feed">
-      <div class="feed__head">Event vừa sinh ra — không cần sang tab Dashboard</div>
-      <ul id="services-feed" class="feed__list">
-        <li class="feed__empty">Chưa có. Thử tạo service hoặc đổi start type ở trên.</li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- Modal xem RawXml, lay qua GET /api/events/{id} khi bam vao 1 dong -->
-  <div id="modal" class="modal" hidden>
-    <div class="modal__box">
-      <div class="modal__head">
-        <strong id="modal-title">Chi tiết event</strong>
-        <button type="button" id="modal-close" class="modal__close">Đóng</button>
+    <!-- Modal xem RawXml, lay qua GET /api/events/{id} khi bam vao 1 dong -->
+    <div id="modal" class="modal" hidden>
+      <div class="modal__box">
+        <div class="modal__head">
+          <strong id="modal-title">Chi tiết event</strong>
+          <button type="button" id="modal-close" class="modal__close">
+            Đóng
+          </button>
+        </div>
+        <!-- modal-meta/modal-xml DA LA noi dung General/Details roi, chi thieu UI
+           chuyen tab - khong can them du lieu gi moi. -->
+        <div class="modal__tabs">
+          <button
+            type="button"
+            class="modal__tab is-active"
+            data-modal-tab="general"
+          >
+            Tổng quan
+          </button>
+          <button type="button" class="modal__tab" data-modal-tab="details">
+            Chi tiết
+          </button>
+        </div>
+        <div id="modal-meta" class="modal__meta"></div>
+        <pre id="modal-xml" class="modal__xml" hidden>Đang tải…</pre>
       </div>
-      <div id="modal-meta" class="modal__meta"></div>
-      <pre id="modal-xml" class="modal__xml">Đang tải…</pre>
     </div>
-  </div>
 
-  <script src="lib/signalr/signalr.min.js"></script>
-  <script src="app.js"></script>
-  <script src="manage.js"></script>
-</body>
+    <script src="lib/signalr/signalr.min.js"></script>
+    <script src="theme.js"></script>
+    <script src="colresize.js"></script>
+    <script src="filtermenu.js"></script>
+    <script src="disclosure.js"></script>
+    <!-- PHAI dung truoc app.js: app.js goi window.attachDetailPane ngay luc chay
+       de dung khung chi tiet cho 3 leaf curated. -->
+    <script src="detailpane.js"></script>
+    <script src="logexport.js"></script>
+    <script src="charts.js"></script>
+    <!-- Truoc manage.js: manage.js goi window.buildTaskDialog. -->
+    <script src="taskdialog.js"></script>
+    <script src="app.js"></script>
+    <script src="manage.js"></script>
+    <script src="logsbrowse.js"></script>
+    <script src="summary.js"></script>
+    <!-- Sau app.js: dung window.getEvents/formatTime/openEventDetail. -->
+    <script src="insight.js"></script>
+    <script src="customviews.js"></script>
+  </body>
 </html>

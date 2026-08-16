@@ -1,0 +1,62 @@
+<!--
+  MAU TU SOAN - KHONG PHAI XML THAT LAY TU MAY DEV.
+
+  Khac han moi fixture con lai trong thu muc nay (deu la mau that capture bang
+  EventRecord.ToXml()). File nay ton tai vi khoi <RenderingInfo> CHI xuat hien o
+  event duoc chuyen tiep qua Windows Event Forwarding khi subscription dung format
+  mac dinh "Rendered Text" - may dev chua bat WEF nen chua capture duoc mau that.
+
+  Cau truc viet theo schema Microsoft cong bo (Event Schema - RenderingInfo). Dung
+  quy tac "khong doan cau truc" trong CLAUDE.md: no CHI dung de test nhanh parse
+  cua WindowsEventParser.ApplyDisplayFields, KHONG duoc coi la bang chung rang
+  event WEF that trong ra dung nhu vay.
+
+  VIEC CAN LAM khi co may WEF that: capture mot event tu channel ForwardedEvents,
+  so voi file nay, thay bang mau that roi doi ten bo hau to "_synthetic".
+  Xem docs/wef-mapping.md muc "Rendered Text vs Events format".
+
+  Phan <System>/<EventData> ben duoi sao theo 7045_service_installed_system.xml
+  (mau that) de chi co dung MOT diem khac biet la khoi <RenderingInfo>.
+-->
+<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <System>
+    <Provider Name="Service Control Manager" Guid="{555908d1-a6d7-4695-8e1e-26931d2012f4}" EventSourceName="Service Control Manager" />
+    <EventID Qualifiers="16384">7045</EventID>
+    <Version>0</Version>
+    <Level>4</Level>
+    <Task>0</Task>
+    <Opcode>0</Opcode>
+    <Keywords>0x8080000000000000</Keywords>
+    <TimeCreated SystemTime="2026-08-13T03:26:53.1234567Z" />
+    <EventRecordID>99001</EventRecordID>
+    <Correlation />
+    <Execution ProcessID="748" ThreadID="6120" />
+    <Channel>ForwardedEvents</Channel>
+    <Computer>WEF-SOURCE-01</Computer>
+    <Security UserID="S-1-5-18" />
+  </System>
+  <EventData>
+    <Data Name="ServiceName">WinSentinelSyntheticSvc</Data>
+    <Data Name="ImagePath">C:\Windows\System32\cmd.exe /c echo synthetic</Data>
+    <Data Name="ServiceType">user mode service</Data>
+    <Data Name="StartType">demand start</Data>
+    <Data Name="AccountName">LocalSystem</Data>
+  </EventData>
+  <RenderingInfo Culture="en-US">
+    <Message>A service was installed in the system.
+
+Service Name:  WinSentinelSyntheticSvc
+Service File Name:  C:\Windows\System32\cmd.exe /c echo synthetic
+Service Type:  user mode service
+Service Start Type:  demand start
+Service Account:  LocalSystem</Message>
+    <Level>Information</Level>
+    <Task>None</Task>
+    <Opcode>Info</Opcode>
+    <Channel>ForwardedEvents</Channel>
+    <Provider>Service Control Manager</Provider>
+    <Keywords>
+      <Keyword>Classic</Keyword>
+    </Keywords>
+  </RenderingInfo>
+</Event>

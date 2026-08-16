@@ -9,6 +9,15 @@
 
   <ItemGroup>
     <!--
+      Cho project test thay cac helper 'internal' (DescribeActionType, ReadMultiSz,
+      BuildRecordIdXPath...). Chung la logic thuan ham nen test duoc truc tiep, khong
+      phai noi rong ra 'public' chi de test.
+    -->
+    <InternalsVisibleTo Include="TaskServiceMonitor.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       EventLogWatcher nam trong assembly System.Diagnostics.EventLog.dll,
       KHONG co san trong framework net8.0-windows nen phai tham chieu package nay.
     -->

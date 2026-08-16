@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using TaskServiceMonitor.Data;
@@ -11,9 +12,11 @@ using TaskServiceMonitor.Data;
 namespace TaskServiceMonitor.Migrations
 {
     [DbContext(typeof(MonitorDbContext))]
-    partial class MonitorDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814210106_AddTaskSchedulerOperationalFields")]
+    partial class AddTaskSchedulerOperationalFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -51,9 +54,6 @@ namespace TaskServiceMonitor.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("Data");
 
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
                     b.Property<string>("DisplayName")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
@@ -73,17 +73,6 @@ namespace TaskServiceMonitor.Migrations
                     b.Property<bool>("IsRecognized")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("Keywords")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<int?>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("LevelDisplayName")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<string>("ObjectName")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
@@ -92,10 +81,6 @@ namespace TaskServiceMonitor.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
-
-                    b.Property<string>("OpcodeName")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
 
                     b.Property<string>("PreviousStartType")
                         .HasMaxLength(64)
@@ -141,13 +126,6 @@ namespace TaskServiceMonitor.Migrations
                     b.Property<string>("TaskArguments")
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
-
-                    b.Property<int?>("TaskCategoryId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("TaskCategoryName")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
 
                     b.Property<string>("TaskComHandlerClassId")
                         .HasMaxLength(64)

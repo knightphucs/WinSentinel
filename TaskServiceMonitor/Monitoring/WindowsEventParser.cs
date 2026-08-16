@@ -18,7 +18,7 @@ public sealed class WindowsEventParser
     /// 7036 và 7034 CỐ Ý không nằm ở đây: chưa lấy được mẫu thật nên không đoán cấu trúc.
     /// </summary>
     public static readonly int[] RecognizedEventIds =
-        [4697, 4698, 4699, 4700, 4701, 4702, 7040, 7045];
+        [4697, 4698, 4699, 4700, 4701, 4702, 7040, 7045, 106, 140, 141, 200, 201];
 
     private static readonly XNamespace EventNs = "http://schemas.microsoft.com/win/2004/08/events/event";
     private static readonly XNamespace TaskNs = "http://schemas.microsoft.com/windows/2004/02/mit/task";
@@ -33,13 +33,29 @@ public sealed class WindowsEventParser
 
     /// <summary>
     /// Parse trực tiếp từ <see cref="EventRecord"/> nhận được lúc chạy realtime.
-    /// Chỉ lấy XML rồi gọi <see cref="Parse(string)"/> — mọi logic map field nằm ở
-    /// một chỗ duy nhất để test bằng file mẫu vẫn phủ được đường chạy thật.
     /// </summary>
     public WindowsMonitorEvent Parse(EventRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
-        return Parse(record.ToXml());
+        return Parse(record.ToXml(), record);
+    }
+
+    /// <summary>
+    /// Parse XML rồi bổ sung các field CHỈ lấy được từ <see cref="EventRecord"/> sống
+    /// (Description, tên Task Category/Opcode/Keywords — xem
+    /// <see cref="EventRecordDescriber"/>).
+    ///
+    /// Tồn tại overload này thay vì để bên gọi tự ghép hai bước: mọi đường đọc log
+    /// (<c>AdHocLogReader</c> khi duyệt, <c>EventWatcherService</c> khi realtime) đi
+    /// qua ĐÚNG một hàm, không thể có chỗ quên gọi describer rồi âm thầm mất
+    /// Description ở riêng một nhánh. Nhận sẵn <paramref name="rawXml"/> để bên gọi
+    /// nào đã có XML rồi (watcher cần nó cho sample writer) không phải gọi
+    /// <c>ToXml()</c> lần hai — đây là lời gọi tốn kém, không phải property.
+    /// </summary>
+    public WindowsMonitorEvent Parse(string rawXml, EventRecord? record)
+    {
+        var parsed = Parse(rawXml);
+        return record is null ? parsed : EventRecordDescriber.Apply(parsed, record);
     }
 
     public WindowsMonitorEvent Parse(string rawXml)
@@ -67,12 +83,18 @@ public sealed class WindowsEventParser
             RawXml = rawXml
         };
 
+        result = ApplyDisplayFields(result, root, system);
+
         return eventId switch
         {
             4698 or 4699 or 4700 or 4701 or 4702 => EnrichScheduledTask(result, data),
             4697 => EnrichServiceFromSecurity(result, data),
             7045 => EnrichServiceInstalled(result, data, system),
             7040 => EnrichServiceStartTypeChanged(result, data, system),
+            106 => EnrichTaskRegisteredOperational(result, data),
+            140 or 141 => EnrichTaskChangedOperational(result, data),
+            200 => EnrichTaskActionStarted(result, data, system),
+            201 => EnrichTaskActionCompleted(result, data, system),
             _ => EnrichUnknown(result, data, system)
         };
     }
@@ -196,6 +218,76 @@ public sealed class WindowsEventParser
             ActorAccount = ResolveSid(ReadSystemUserSid(system))
         };
 
+    // ---------------------------------------------------------------- TaskScheduler-Operational
+    // Channel Microsoft-Windows-TaskScheduler/Operational: chi tiet hon nhom Security
+    // (4698-4702) - vi du 200/201 la task THUC SU CHAY, thu ma nhom Security khong co.
+    // Viet dua tren mau XML that thu duoc (samples/106_*.xml, 140_*.xml, 141_*.xml,
+    // 200_*.xml, 201_*.xml).
+
+    /// <summary>
+    /// TaskName cua channel nay CO KHOANG TRANG THUA o cuoi (da xac nhan qua mau
+    /// that, vi du "\WinSentinelSampleCapture "). Cat di de khop dinh dang "\Path"
+    /// khong khoang trang ma COM Task Scheduler (TaskManager.cs) va channel Security
+    /// dang dung - khong cat se lam lech key luc doi chieu ObjectName giua cac nguon
+    /// (vi du tinh nang "sap xep theo moi nhat" o manage.js dua vao TaskManager.Path).
+    /// </summary>
+    private static string? TrimTaskName(string? raw) => raw?.Trim();
+
+    /// <summary>106 - task vua duoc dang ky (tao moi). Field: TaskName, UserContext.</summary>
+    private static WindowsMonitorEvent EnrichTaskRegisteredOperational(
+        WindowsMonitorEvent e, IReadOnlyDictionary<string, string> data) => e with
+        {
+            IsRecognized = true,
+            ObjectName = TrimTaskName(Get(data, "TaskName")),
+            ActorAccount = Get(data, "UserContext")
+        };
+
+    /// <summary>
+    /// 140 (task updated) va 141 (task deleted) - CUNG mot hinh dang field: TaskName,
+    /// UserName. Dung chung mot ham. Khac voi nhom Security (4698-4702): the &lt;Security&gt;
+    /// trong &lt;System&gt; cua nhom nay luon la LocalSystem (Task Scheduler engine thuc
+    /// hien thao tac), nguoi dung that nam o field UserName trong EventData.
+    /// </summary>
+    private static WindowsMonitorEvent EnrichTaskChangedOperational(
+        WindowsMonitorEvent e, IReadOnlyDictionary<string, string> data) => e with
+        {
+            IsRecognized = true,
+            ObjectName = TrimTaskName(Get(data, "TaskName")),
+            ActorAccount = Get(data, "UserName")
+        };
+
+    /// <summary>
+    /// 200 - mot action cua task VUA BAT DAU CHAY. Field: TaskName, ActionName (co the
+    /// rong voi action ComHandler), TaskInstanceId, EnginePID. Khong co UserContext/
+    /// UserName nhu 106/140/141 - actor lay tu System/Security nhu nhom Service.
+    /// </summary>
+    private static WindowsMonitorEvent EnrichTaskActionStarted(
+        WindowsMonitorEvent e, IReadOnlyDictionary<string, string> data, XElement system) => e with
+        {
+            IsRecognized = true,
+            ObjectName = TrimTaskName(Get(data, "TaskName")),
+            TaskCommand = Get(data, "ActionName"),
+            TaskInstanceId = Get(data, "TaskInstanceId"),
+            ActorSid = ReadSystemUserSid(system),
+            ActorAccount = ResolveSid(ReadSystemUserSid(system))
+        };
+
+    /// <summary>
+    /// 201 - mot action cua task VUA CHAY XONG. Field giong 200 nhung them ResultCode -
+    /// dung TaskInstanceId de doi chieu voi dong 200 tuong ung (cung mot lan chay).
+    /// </summary>
+    private static WindowsMonitorEvent EnrichTaskActionCompleted(
+        WindowsMonitorEvent e, IReadOnlyDictionary<string, string> data, XElement system) => e with
+        {
+            IsRecognized = true,
+            ObjectName = TrimTaskName(Get(data, "TaskName")),
+            TaskCommand = Get(data, "ActionName"),
+            TaskInstanceId = Get(data, "TaskInstanceId"),
+            TaskActionResultCode = Get(data, "ResultCode"),
+            ActorSid = ReadSystemUserSid(system),
+            ActorAccount = ResolveSid(ReadSystemUserSid(system))
+        };
+
     /// <summary>
     /// Nhanh du phong cho Event ID chua co xu ly rieng (vi du 7036/7034 - chua lay
     /// duoc mau that nen KHONG doan cau truc). Van tra ve event dung dinh dang,
@@ -234,6 +326,78 @@ public sealed class WindowsEventParser
             ? value.UtcDateTime
             : DateTime.UtcNow;
     }
+
+    // ---------------------------------------------------------------- Field hien thi kieu Event Viewer
+
+    /// <summary>
+    /// Hai nguồn khác hẳn nhau:
+    /// 1. <c>&lt;System&gt;</c> — Level/Task/Keywords luôn có sẵn nhưng chỉ là SỐ.
+    /// 2. <c>&lt;RenderingInfo&gt;</c> — CHỈ có ở event forward qua WEF format mặc định
+    ///    "Rendered Text", mang sẵn cả Message lẫn tên đã dịch nên collector đọc được
+    ///    mà không cần message DLL của máy nguồn. Đổi sang <c>wecutil /cf:Events</c> sẽ
+    ///    CẮT MẤT khối này — xem docs/wef-mapping.md.
+    /// Còn lại phải lấy từ EventRecord sống (<see cref="EventRecordDescriber"/>).
+    ///
+    /// ⚠️ Nhánh RenderingInfo CHƯA verify bằng mẫu thật (máy dev chưa bật WEF);
+    /// fixture test là file tự soạn <c>renderinginfo_synthetic.xml</c>.
+    /// </summary>
+    private static WindowsMonitorEvent ApplyDisplayFields(
+        WindowsMonitorEvent e, XElement root, XElement system)
+    {
+        var rendering = root.Element(EventNs + "RenderingInfo");
+        var level = ParseIntOrNull(system.Element(EventNs + "Level")?.Value);
+
+        return e with
+        {
+            Description = Clean(rendering?.Element(EventNs + "Message")?.Value),
+            Level = level,
+            // Ten da dich tu may nguon uu tien hon bang cung ben duoi.
+            LevelDisplayName = Clean(rendering?.Element(EventNs + "Level")?.Value)
+                               ?? DescribeLevel(level),
+            TaskCategoryId = ParseIntOrNull(system.Element(EventNs + "Task")?.Value),
+            TaskCategoryName = Clean(rendering?.Element(EventNs + "Task")?.Value),
+            OpcodeName = Clean(rendering?.Element(EventNs + "Opcode")?.Value),
+            Keywords = ReadKeywords(rendering, system)
+        };
+    }
+
+    /// <summary>
+    /// Bảng HẰNG SỐ của Windows (khác Task vốn là metadata riêng từng provider) nên
+    /// map thẳng từ XML được. 0 = LogAlways, Event Viewer vẫn hiện "Information".
+    /// </summary>
+    private static string? DescribeLevel(int? level) => level switch
+    {
+        null => null,
+        0 => "Information",
+        1 => "Critical",
+        2 => "Error",
+        3 => "Warning",
+        4 => "Information",
+        5 => "Verbose",
+        _ => $"Level {level}"
+    };
+
+    /// <summary>Tên Keyword đã dịch nếu có, không thì giá trị hex thô.</summary>
+    private static string? ReadKeywords(XElement? rendering, XElement system)
+    {
+        var named = rendering?.Element(EventNs + "Keywords")?
+            .Elements(EventNs + "Keyword")
+            .Select(k => k.Value.Trim())
+            .Where(v => v.Length > 0)
+            .ToArray();
+
+        return named is { Length: > 0 }
+            ? string.Join(", ", named)
+            : Clean(system.Element(EventNs + "Keywords")?.Value);
+    }
+
+    private static int? ParseIntOrNull(string? raw)
+        => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+
+    private static string? Clean(string? raw)
+        => string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
 
     /// <summary>
     /// Doc &lt;EventData&gt; thanh dictionary. Field khong co thuoc tinh Name (mot so

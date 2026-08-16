@@ -1,14 +1,125 @@
 using System.ComponentModel;
+using Microsoft.EntityFrameworkCore;
+using TaskServiceMonitor.Data;
 using TaskServiceMonitor.Management;
+using TaskServiceMonitor.Models;
+using TaskServiceMonitor.Monitoring;
 
 namespace TaskServiceMonitor.Api;
 
+/// <summary>
+/// Dạng RÚT GỌN, giữ lại để tương thích ngược (form 4 ô cũ, script, curl demo).
+/// Hộp thoại mới gửi thẳng <see cref="TaskDefinitionRequest"/>.
+/// </summary>
 public sealed record CreateTaskRequest(string Name, string Command, string? Arguments, string? StartBoundary);
-public sealed record CreateServiceRequest(string Name, string BinaryPath, string? StartType, string? DisplayName);
+public sealed record CreateServiceRequest(
+    string Name, string BinaryPath, string? StartType, string? DisplayName,
+    string? Description = null, string[]? Dependencies = null, string? Account = null);
 public sealed record ChangeStartTypeRequest(string StartType);
 
 public static class ManagementEndpoints
 {
+    /// <summary>
+    /// GET /api/system/overview — số liệu cho ô "Overview" ở Dashboard.
+    ///
+    /// CỐ Ý query DB thật chứ không tính từ mảng ~200 event trên client như 3 card ở
+    /// trên: ô này để trả lời "hệ thống có đang chạy đúng không", cần con số toàn cục.
+    /// </summary>
+    private static async Task<IResult> GetOverview(
+        MonitorDbContext db, ChannelStatusRegistry registry, SafeNameGuard guard,
+        CancellationToken ct)
+    {
+        var since = DateTime.UtcNow.AddHours(-24);
+
+        var total = await db.Events.CountAsync(ct);
+
+        var span = await db.Events.AsNoTracking()
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Oldest = g.Min(e => e.TimeCreated),
+                Newest = g.Max(e => e.TimeCreated)
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var topEventIds = await db.Events.AsNoTracking()
+            .GroupBy(e => new { e.EventId, e.ProviderName, e.ActionDescription })
+            .Select(g => new
+            {
+                g.Key.EventId,
+                source = g.Key.ProviderName,
+                action = g.Key.ActionDescription,
+                count = g.Count()
+            })
+            .OrderByDescending(x => x.count)
+            .Take(5)
+            .ToListAsync(ct);
+
+        // Gom theo (ngay, gio, muc rui ro) o TANG DB - Npgsql dich .Date/.Hour thanh
+        // date_trunc/date_part. Keo het 24 gio ve roi gom trong bo nho se tai vai
+        // nghin dong chi de dem.
+        var raw = await db.Events.AsNoTracking()
+            .Where(e => e.TimeCreated >= since)
+            .GroupBy(e => new { e.TimeCreated.Date, e.TimeCreated.Hour, e.RiskLevel })
+            .Select(g => new { g.Key.Date, g.Key.Hour, g.Key.RiskLevel, Count = g.Count() })
+            .ToListAsync(ct);
+
+        // Dung du 24 o theo gio UTC, o nao khong co event thi de 0 - bieu do khong
+        // duoc phep "nhay coc" nhung gio vang.
+        var buckets = Enumerable.Range(0, 24)
+            .Select(offset =>
+            {
+                var slot = DateTime.UtcNow.AddHours(-23 + offset);
+                var match = raw.Where(r => r.Date == slot.Date && r.Hour == slot.Hour).ToList();
+
+                return new
+                {
+                    hourUtc = new DateTime(slot.Year, slot.Month, slot.Day, slot.Hour, 0, 0, DateTimeKind.Utc),
+                    high = match.Where(m => m.RiskLevel == RiskLevel.High).Sum(m => m.Count),
+                    medium = match.Where(m => m.RiskLevel == RiskLevel.Medium).Sum(m => m.Count),
+                    low = match.Where(m => m.RiskLevel == RiskLevel.Low).Sum(m => m.Count)
+                };
+            })
+            .ToList();
+
+        // Gom theo may tren TOAN BO DB. Card o Dashboard dem tren ~200 event client
+        // nen hai con so se lech - UI phai ghi ro cai nao la toan cuc.
+        var byHost = await db.Events.AsNoTracking()
+            .GroupBy(e => e.Hostname)
+            .Select(g => new
+            {
+                hostname = g.Key,
+                total = g.Count(),
+                high = g.Count(e => e.RiskLevel == RiskLevel.High),
+                medium = g.Count(e => e.RiskLevel == RiskLevel.Medium),
+                low = g.Count(e => e.RiskLevel == RiskLevel.Low),
+                lastEventUtc = g.Max(e => e.TimeCreated)
+            })
+            .OrderByDescending(x => x.total)
+            .Take(10)
+            .ToListAsync(ct);
+
+        var riskDistribution = await db.Events.AsNoTracking()
+            .GroupBy(e => e.RiskLevel)
+            .Select(g => new { riskLevel = g.Key, count = g.Count() })
+            .ToListAsync(ct);
+
+        return Results.Ok(new
+        {
+            isElevated = ElevationInfo.IsElevated(),
+            currentUser = ElevationInfo.CurrentUserName(),
+            writablePrefix = guard.WritablePrefix,
+            channels = registry.All(),
+            totalEvents = total,
+            oldestEventUtc = span?.Oldest,
+            newestEventUtc = span?.Newest,
+            topEventIds,
+            hourlyBuckets = buckets,
+            byHost,
+            riskDistribution
+        });
+    }
+
     public static void MapManagementEndpoints(this WebApplication app)
     {
         app.MapGet("/api/system/status", (SafeNameGuard guard) => Results.Ok(new
@@ -18,27 +129,72 @@ public static class ManagementEndpoints
             writablePrefix = guard.WritablePrefix
         }));
 
+        // Trang thai THAT cua tung channel (subscribe thanh cong hay khong, co dang
+        // doc duoc event khong, bao nhieu event da nhan) - cho panel "Log Summary"
+        // o Dashboard. Xem ghi chu trong ChannelStatusRegistry ve ly do can tach
+        // rieng "subscribed" voi "dang thuc su nhan event".
+        app.MapGet("/api/system/channels", (ChannelStatusRegistry registry) =>
+            Results.Ok(registry.All()));
+
+        app.MapGet("/api/system/overview", GetOverview);
+
         // ------------------------------------------------------------ Tasks
         app.MapGet("/api/tasks", (TaskManager tasks) => Run(() => Results.Ok(tasks.List())));
 
         app.MapGet("/api/tasks/xml", (TaskManager tasks, string path) =>
             Run(() => Results.Text(tasks.GetXml(path), "application/xml")));
 
+        // Endpoint RIENG cho modal chi tiet: doc them Definition.RegistrationInfo /
+        // .Principal / .Triggers la nhieu loi goi COM cho MOI task - tra het trong
+        // /api/tasks se lam cham ca danh sach vai tram task.
+        app.MapGet("/api/tasks/detail", (TaskManager tasks, string path) =>
+            Run(() => Results.Ok(tasks.Detail(path))));
+
         // Ten chua co -> tao moi (4698). Ten da co -> ghi de (4702).
         app.MapPost("/api/tasks", (TaskManager tasks, CreateTaskRequest req) => Run(() =>
         {
             RequireElevation();
-            tasks.CreateOrUpdate(
-                req.Name,
-                req.Command,
-                req.Arguments,
-                // Mac dinh hen gio xa trong tuong lai: muc dich la SINH RA LOG,
-                // khong phai de task that su chay.
-                req.StartBoundary ?? DateTime.Now.AddYears(1).ToString("yyyy-MM-ddTHH:mm:ss"));
+
+            // Minimal API KHONG ep buoc thanh vien non-nullable cua record: body {} van
+            // bind duoc voi moi field null. Khong chan o day thi null di sau vao COM/
+            // Win32 roi bung ra 500 tho thay vi 400.
+            RequireField(req.Name, "name");
+            RequireField(req.Command, "command");
+
+            tasks.CreateOrUpdate(new TaskDefinitionRequest
+            {
+                Name = req.Name,
+                Actions = [new ActionRequest("Exec", req.Command, req.Arguments)],
+                Triggers = [new TriggerRequest("Time", req.StartBoundary)],
+            });
 
             return Results.Ok(new
             {
                 message = $"Da ghi task '{req.Name}'. Tao moi sinh event 4698, ghi de sinh 4702."
+            });
+        }));
+
+        // Dang DAY DU cho hop thoai 5 tab. Query ?api=objectmodel doi sang duong
+        // TaskService.NewTask() de doi chieu hai cach lam - xem TaskManager.
+        app.MapPost("/api/tasks/full",
+            (TaskManager tasks, TaskDefinitionRequest req, string? api) => Run(() =>
+        {
+            RequireElevation();
+            RequireField(req.Name, "name");
+
+            if (string.Equals(api, "objectmodel", StringComparison.OrdinalIgnoreCase))
+            {
+                tasks.CreateViaObjectModel(req);
+            }
+            else
+            {
+                tasks.CreateOrUpdate(req);
+            }
+
+            return Results.Ok(new
+            {
+                message = $"Da ghi task '{req.Name}' ({req.Actions.Count} action, " +
+                          $"{req.Triggers.Count} trigger). Tao moi sinh 4698, ghi de sinh 4702."
             });
         }));
 
@@ -73,10 +229,19 @@ public static class ManagementEndpoints
         // ------------------------------------------------------------ Services
         app.MapGet("/api/services", (ServiceManager services) => Run(() => Results.Ok(services.List())));
 
+        // Nhu /api/tasks/detail: 3 loi goi QueryServiceConfig2 moi service (description,
+        // delayed auto start, recovery actions) nen chi chay khi mo modal.
+        app.MapGet("/api/services/{name}", (ServiceManager services, string name) =>
+            Run(() => Results.Ok(services.Detail(name))));
+
         app.MapPost("/api/services", (ServiceManager services, CreateServiceRequest req) => Run(() =>
         {
             RequireElevation();
-            services.Create(req.Name, req.BinaryPath, req.StartType ?? "demand start", req.DisplayName);
+            RequireField(req.Name, "name");
+            RequireField(req.BinaryPath, "binaryPath");
+            services.Create(
+                req.Name, req.BinaryPath, req.StartType ?? "demand start", req.DisplayName,
+                req.Description, req.Dependencies, req.Account);
             return Results.Ok(new { message = $"Da tao service '{req.Name}'. Xem event 7045 o tab Dashboard." });
         }));
 
@@ -105,9 +270,23 @@ public static class ManagementEndpoints
             (ServiceManager services, string name, ChangeStartTypeRequest req) => Run(() =>
         {
             RequireElevation();
+            RequireField(req.StartType, "startType");
             services.ChangeStartType(name, req.StartType);
             return Results.Ok(new { message = $"Da doi start type cua '{name}'. Xem event 7040 o tab Dashboard." });
         }));
+    }
+
+    /// <summary>
+    /// Minimal API bind body <c>{}</c> thành record với mọi field null, KHÔNG ném lỗi
+    /// dù thành viên khai là non-nullable. Thiếu bước này thì null đi sâu vào COM/Win32
+    /// rồi bung ra 500 thô — ví dụ <c>ParseStartType(null)</c> ném NullReferenceException.
+    /// </summary>
+    private static void RequireField(string? value, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"Thieu tham so '{fieldName}'.");
+        }
     }
 
     private sealed class NotElevatedException() : Exception(

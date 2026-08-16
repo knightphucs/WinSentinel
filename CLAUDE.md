@@ -119,6 +119,142 @@ không phải chuyển sang tab Dashboard. Cùng một luồng SignalR, không m
 `AddSignalR().AddJsonProtocol(...)`. Đăng ký thiếu một bên thì enum hiện **số** lúc
 realtime rồi thành **chữ** sau khi F5 (đã dính lỗi này một lần).
 
+## Bước 7 — Resume sau restart bằng EventRecordID cursor (theo gợi ý mentor)
+
+Lấp gap đã tự ghi trước đó ("chưa lưu bookmark, restart bỏ lỡ event lúc app
+down"). Mentor gợi ý cần lấy được **Log ID** (tức `EventRecordID` — số thứ tự
+DUY NHẤT của từng bản ghi trong một channel, khác hẳn Event ID như 4698/7045
+vốn chỉ là "loại" sự kiện) để trích xuất log tin cậy bằng WinAPI.
+
+- **Không dùng class `EventBookmark`**: cần `BinaryFormatter` để
+  serialize/khôi phục, mà .NET 8 đã gỡ bỏ `BinaryFormatter` theo mặc định.
+- **Giải pháp**: `RecordId` vốn đã được `WindowsEventParser` đọc và lưu DB từ
+  trước (dùng làm khoá `IX_Events_Dedup`) — tận dụng chính nó làm "con trỏ".
+  `EventWatcherService` đọc `MAX(RecordId)` theo **Channel** (không theo
+  Hostname — RecordId là số thứ tự của channel trên máy chạy app, không thuộc
+  về từng máy nguồn, quan trọng khi dùng `ForwardedEvents` sau này) lúc khởi
+  động, nhúng vào XPath filter qua `MonitoredEventIds.BuildXPathFilter(channel,
+  afterRecordId)` → `*[System[(...) and (EventRecordID>N)]]`. Có cursor thì
+  bật `ReadExistingEvents = true` để đọc bù đúng phần lỡ mất, không phải toàn
+  bộ lịch sử.
+- Có xử lý trường hợp channel bị `wevtutil cl` (clear) trong lúc app tắt: so
+  cursor đã lưu với `EventLogSession.GetLogInformation(...)` của channel, nếu
+  record mới nhất hiện có nhỏ hơn cursor cũ (dấu hiệu số thứ tự bị đánh lại từ
+  đầu) thì bỏ cursor, subscribe lại từ đầu thay vì lọc mất toàn bộ event mới.
+- Test mới `MonitoredEventIdsTests.cs` (3 test cho `BuildXPathFilter`),
+  `dotnet test` **80/80 pass**. Phần đọc DB/WinAPI thật (`ResolveCursor`,
+  `LoadLastKnownRecordIdsAsync`) verify bằng tay: tạo event, tắt app, sinh
+  thêm event trong lúc tắt, bật lại — số event mới khôi phục đúng bằng số đã
+  sinh lúc app down, không nhân đôi (`IX_Events_Dedup` vẫn chặn).
+
+## Bước 8 — Description / Level / Task Category, Saved Events, khung chi tiết
+
+Mục tiêu: 4 panel log hoạt động như Event Viewer thật. **Đọc
+[docs/wef-mapping.md](docs/wef-mapping.md)** — tài liệu đối chiếu dự án với 2 tài
+liệu WEF/WES của Microsoft, kèm phần giải thích "vì sao channel X chưa có data".
+
+- **Description KHÔNG nằm trong XML.** Nó là kết quả render message DLL của
+  provider (`EvtFormatMessage` → `EventRecord.FormatDescription()`), chỉ lấy được
+  khi còn giữ `EventRecord` **sống**. Trước bước 8 cả hai đường đọc log đều gọi
+  `record.ToXml()` rồi vứt record ngay → mất vĩnh viễn. Nay dồn vào
+  `Monitoring/EventRecordDescriber.cs`, nối qua overload
+  `WindowsEventParser.Parse(rawXml, record)` — **một chỗ duy nhất**, không thể có
+  nhánh nào quên gọi.
+- **NGOẠI LỆ CÓ CHỦ ĐÍCH của quy ước "không làm việc nặng trong
+  `EventRecordWritten`"**: `FormatDescription()` được gọi ngay trong callback đồng
+  bộ đó. Không có lựa chọn khác (record bị dispose trước khi `EventPersistenceService`
+  chạy), và watcher chỉ nhận 15 Event ID lưu lượng thấp. Lý do đã ghi ngay tại chỗ
+  gọi — **đừng "sửa lại cho đúng quy ước"** mà không đọc.
+- **`<RenderingInfo>` chỉ tồn tại ở event chuyển tiếp qua WEF chế độ "Rendered
+  Text"** (mặc định). Khối này mang sẵn Description + tên Level/Task/Opcode đã
+  dịch, nên collector đọc được mà không cần message DLL của máy nguồn. Đổi
+  subscription sang `wecutil ss <sub> /cf:Events` sẽ **cắt mất khối này** → mất
+  Description toàn bộ event forwarded. Parser ưu tiên `<RenderingInfo>`, không có
+  mới hỏi record sống.
+  - ⚠️ Nhánh này **chưa verify bằng mẫu thật** (máy dev chưa bật WEF). Fixture
+    `renderinginfo_synthetic.xml` là file **tự soạn** — xem ghi chú trong chính file.
+- `Level`/`TaskCategoryId`/`Keywords` thì **có** trong `<System>` của XML → parser
+  đọc thẳng, test được bằng fixture thật, và `--backfill` dựng lại được cho dòng cũ.
+  Riêng `Description` **không backfill được** (dòng cũ mãi null).
+- **Saved Events**: `Monitoring/SavedLogStore.cs` dùng `ExportLogAndMessages` chứ
+  không phải `ExportLog` — bản `AndMessages` nhúng luôn chuỗi đã render nên mở file
+  trên máy khác vẫn còn Description. Đọc lại qua `PathType.FilePath` bằng chính
+  `AdHocLogReader`. **Rào chống path traversal ở tầng server** (`Resolve()`), cùng
+  triết lý `SafeNameGuard` — tên file đến thẳng từ URL mà app chạy Administrator.
+- **Khung chi tiết dọc dưới bảng** (`wwwroot/detailpane.js`) cho 4 panel log.
+  Dashboard/Tasks/Services **giữ nguyên modal** — cố ý, không đổi cái đang chạy tốt.
+  `detailpane.js` phải load **trước** `app.js`.
+- `--rescore` đổi thành `--backfill` (giữ alias cũ), nay tính lại cả nhóm field mới.
+
+## Bước 10 — Whitelist đầu vào, Create Task đầy đủ, Dashboard trực quan
+
+- **LỖ HỔNG đã vá**: `SafeNameGuard` chỉ kiểm tra **tên**, nên `BinaryPath` của service
+  đi thẳng vào `CreateServiceW` với account `null` → service chạy **LocalSystem**,
+  start được ngay qua API. `Command`/`Arguments` của task cũng không kiểm tra gì.
+  Nay có `Management/InputPolicy.cs`.
+- **`InputPolicy` và `SafeNameGuard` KHÔNG thay thế nhau**: guard trả lời "được phép ghi
+  lên tên này không", policy trả lời "giá trị nhập vào có hợp lệ không". Cả hai đều
+  phải gọi.
+- Thứ tự 7 bước của `EnsureAllowedExecutable` là **load-bearing**: bóc exe khỏi tham số
+  → giãn `%VAR%` → `Path.GetFullPath` → chặn UNC → bắt file tồn tại → thư mục cho phép
+  → tên exe cho phép. Bỏ bước `GetFullPath` thì
+  `C:\Windows\System32\..\..\Users\x\evil.exe` lọt vì vẫn khớp tiền tố chuỗi.
+- ⚠️ **Whitelist chặn ĐƯỜNG DẪN, không chặn HÀNH VI**: `cmd.exe /c <bất cứ gì>` vẫn
+  chạy. Nó thu hẹp bề mặt tấn công, **không phải sandbox** — đừng mô tả quá lên.
+  Cố ý không có `powershell.exe` trong danh sách mặc định (nó nhận `-EncodedCommand`).
+- `Management` section trong `appsettings.json` trước đây **không tồn tại**, chỉ có
+  default `"WinSentinel"` trong code. Nay khai đầy đủ.
+- **Lỗi mất dữ liệu đã sửa**: `POST /api/tasks` là ghi đè toàn bộ, mà form sửa để
+  trắng `arguments`/`startBoundary` → bấm "Cập nhật" là mất arguments và dời trigger.
+  Hộp thoại mới **nạp lại định nghĩa** từ `/api/tasks/detail` trước khi sửa.
+- `BuildTaskXml` nay nhận `TaskDefinitionRequest` (một model) thay vì 3 tham số rời —
+  vẫn là **hàm thuần**, test được không cần Windows. Đó là lý do giữ đường XML làm
+  mặc định thay vì object model COM.
+- `CreateViaObjectModel` là đường tương đương dùng `TaskService.NewTask()` +
+  `RegisterTaskDefinition` (theo tài liệu TaskService), bật bằng `?api=objectmodel`.
+  **Cả hai đường đi qua cùng `Validate()`** — không đường nào lách được whitelist.
+- **Hộp thoại Create Task là MODELESS** (`.dialog`, không có lớp phủ) — mở ra vẫn thao
+  tác được bảng phía sau, kéo di chuyển được. Cố ý KHÔNG dùng lại `#modal` vì cái đó
+  `position:fixed; inset:0` chặn toàn trang.
+- **Màu biểu đồ dùng `--chart-*`, KHÔNG dùng `--risk-*-bg`**: mấy biến risk là nền
+  badge nhạt (`#eaeef2`, `#fff8c5`), vẽ cột chồng lên nhau gần như vô hình.
+- Channel "**TẮT**" trong dropdown = Windows tắt channel đó (`enabled: false`), không
+  ghi event nào. Bật: `wevtutil sl "<tên>" /e:true` (Administrator).
+
+## Bước 9 — Chi tiết Task/Service, Save Selected Events, Dashboard phân tích
+
+- **LỖI ĐUA đã sửa** (`ChannelStatusRegistry`): `TrySubscribe` trước đây bật watcher
+  rồi mới gọi `MarkSubscribed`, mà hàm đó **ghi đè** với `EventsReceived: 0`. Có
+  cursor thì `readExistingEvents = true` nên Windows bắn event đọc bù ngay tại
+  `Enabled = true` (thread khác) → số đếm bị xoá sạch, Log Summary báo "đã subscribe
+  nhưng chưa có event" dù event đã vào DB. Sửa hai lớp: gọi `MarkSubscribed` **trước**
+  khi bật watcher, và đổi hàm đó sang `AddOrUpdate` giữ nguyên số đếm. Có test riêng
+  (`ChannelStatusRegistryTests`). **Đừng đảo lại thứ tự hai dòng đó.**
+- Cột "RecordId cuối" cũ hiển thị *cursor* (đóng băng lúc khởi động) chứ không phải
+  RecordId mới nhất → tách thành **hai cột** + thêm `ChannelStatus.LastRecordId`.
+- **Endpoint chi tiết riêng** `GET /api/tasks/detail?path=` và `GET /api/services/{name}`:
+  đọc `Definition.Triggers/.Principal/.RegistrationInfo` (COM) và `QueryServiceConfig2`
+  (3 lời gọi/service) là **quá đắt để nhét vào danh sách** vài trăm dòng. Danh sách
+  giữ nguyên `TaskInfo`/`ServiceInfo` gọn.
+- `TaskManager.Describe` trước chỉ đọc **action đầu tiên** (`break`) và gán nhầm mọi
+  action ≠ Exec thành "ComHandler" — `DescribeActionType` nay map đủ 0/5/6/7.
+- **`lpDependencies` là MULTI_SZ** (nhiều chuỗi, kết thúc bằng hai null).
+  `Marshal.PtrToStringUni` chỉ trả chuỗi ĐẦU TIÊN → phải dùng
+  `ServiceManager.ReadMultiSz`. Verify thật: `Spooler` trả `RPCSS, http`.
+- `QUERY_SERVICE_CONFIG` và `ENUM_SERVICE_STATUS_PROCESS` **vốn đã marshal đầy đủ rồi
+  bị vứt** — Dependencies/ErrorControl/LoadOrderGroup/ProcessId/ControlsAccepted lấy
+  được mà không tốn thêm syscall nào.
+- **Bộ lọc theo cột giờ dùng chung** cho cả 4 panel log: `leaf` phải có `rows()` và
+  `onApply()` thay vì hardcode `events.filter(channel)`. `logsbrowse.js` đăng ký leaf
+  riêng qua `window.initColumnFilters`.
+- 3 panel curated có **2 chế độ nguồn**: "App đã bắt" (mảng `events`) và "Toàn bộ
+  channel" (`/api/logs/browse`). Cùng một bộ cột — vì vậy `LogBrowseEventDto` phải
+  mang thêm nhóm enrichment (`ImagePath`, `StartType`, `TaskCommand`…), thiếu là cột
+  trống khi đổi chế độ.
+- `InternalsVisibleTo` cho project test — các helper thuần hàm để `internal`, không
+  nới thành `public` chỉ để test.
+- **Xem [docs/log-id-demo.md](docs/log-id-demo.md)** cho kịch bản demo Log ID/Log Summary.
+
 ## Ghi chú kiến trúc bước 4-5
 
 - **Broadcast SignalR nằm ở `EventPersistenceService`, KHÔNG phải
@@ -290,10 +426,6 @@ Các bẫy đã dính khi viết parser (17 mẫu thật trong `TaskServiceMonit
 - **4697 cần Audit Policy KHÁC 4698-4702**: 4698-4702 dùng subcategory
   `"Other Object Access Events"`, còn 4697 dùng `"Security System Extension"`.
   Bật thiếu một trong hai thì nhóm tương ứng sẽ không bao giờ xuất hiện.
-- EventLogWatcher ở bước scaffold ban đầu chưa lưu bookmark — nếu app restart
-  sẽ bỏ lỡ event forward tới trong lúc app down (dù event vẫn còn trong
-  `ForwardedEvents` trên collector). Cần thêm `EventBookmark` persistence sau
-  khi MVP chạy ổn định.
 - **Không đặt giá trị mặc định cho property kiểu mảng trong Options class** —
   `ConfigurationBinder` của .NET **nối thêm** vào mảng sẵn có chứ không ghi đè.
   Để `Channels { get; init; } = ["System"]` rồi config `["System","Security"]`
@@ -304,6 +436,28 @@ Các bẫy đã dính khi viết parser (17 mẫu thật trong `TaskServiceMonit
   qua `EventRecordWrittenEventArgs.EventException` với message
   `"The handle is invalid."`. Luôn phải xử lý `e.EventException` trong handler,
   không chỉ bọc try/catch quanh chỗ subscribe.
+- **Đã mở rộng thêm channel `Microsoft-Windows-TaskScheduler/Operational`**
+  (106 task registered, 140 task updated, 141 task deleted, 200 action started,
+  201 action completed) — channel này **mặc định TẮT** trên Windows (khác
+  `System`/`Security` vốn bật sẵn), phải bật tay bằng quyền Administrator:
+  `wevtutil sl "Microsoft-Windows-TaskScheduler/Operational" /e:true`. Chưa bật
+  thì `EventWatcherService` subscribe lỗi (log ra rõ ràng, không crash app — xem
+  `TrySubscribe`). Cả 5 ID đã có mẫu XML thật + nhánh parse riêng (xem
+  `WindowsEventParser.RecognizedEventIds`, giờ 13/15 ID đã nhận dạng — chỉ còn
+  7034/7036 rơi vào nhánh dự phòng vì máy dev không phát ra được).
+  - **Bẫy đã gặp: `TaskName` của channel này có khoảng trắng thừa ở cuối** trong
+    XML gốc (`"\WinSentinelSampleCapture "`), khác COM (`task.Path`) và channel
+    Security — phải `.Trim()` (xem `WindowsEventParser.TrimTaskName`), không thì
+    tính năng đối chiếu `ObjectName` giữa các nguồn (vd "sắp xếp theo mới nhất")
+    sẽ lệch key.
+  - **200/201 không có `SubjectUserName`/`UserContext`/`UserName`** như 106/140/141
+    — `<Security UserID>` của nhóm này luôn là `LocalSystem` (Task Scheduler
+    engine thực hiện), phải chấp nhận `ActorAccount = LocalSystem` cho hai ID này,
+    không có field nào khác cho biết ai thực sự chạy task.
+  - Lọc theo channel tách riêng qua `MonitoredEventIds.ByChannel` (trước đây mọi
+    channel dùng chung một filter từ `All`, giờ mỗi channel có nhóm ID riêng —
+    cần thiết vì 106/140/141/200/201 là số nhỏ, chung chung, không đặc thù như 10
+    ID gốc, dễ trùng nếu lọc gộp).
 
 ## Quy ước code
 

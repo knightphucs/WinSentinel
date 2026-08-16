@@ -201,6 +201,75 @@ public class WindowsEventParserTests
         Assert.Equal("LocalSystem", scm.ActorAccount);
     }
 
+    // ---------------------------------------------------------------- TaskScheduler-Operational
+    // Mau that thu duoc tu channel Microsoft-Windows-TaskScheduler/Operational (xem
+    // Phase 3/4 cua ke hoach nang cap) - task "\WinSentinelSampleCapture" tao/sua/
+    // chay/xoa qua chinh UI cua app.
+
+    /// <summary>
+    /// TaskName cua channel nay CO khoang trang thua o cuoi trong XML goc (da xac
+    /// nhan qua mau that: "\WinSentinelSampleCapture "). Parser phai cat di de khop
+    /// dinh dang "\Path" khong khoang trang ma cac nguon khac (COM, Security) dung -
+    /// khong cat se lam lech key luc doi chieu ObjectName giua cac nguon.
+    /// </summary>
+    [Fact]
+    public void Parse_106_TaskDangKy_CatKhoangTrangThuaCuaTaskName()
+    {
+        var result = _parser.Parse(SampleXml.Load("106_task_registered_operational.xml"));
+
+        Assert.Equal("Task registered (Operational)", result.ActionDescription);
+        Assert.Equal(MonitoredObjectType.ScheduledTask, result.ObjectType);
+        Assert.Equal(@"\WinSentinelSampleCapture", result.ObjectName);
+        Assert.Equal(@"KAZYY3103\win10", result.ActorAccount);
+        Assert.True(result.IsRecognized);
+    }
+
+    /// <summary>140 (task updated) va 141 (task deleted) dung CUNG mot hinh dang field.</summary>
+    [Theory]
+    [InlineData("140_task_updated_operational.xml", "Task updated (Operational)")]
+    [InlineData("141_task_deleted_operational.xml", "Task deleted (Operational)")]
+    public void Parse_140Va141_CungHinhDangField(string fixture, string expectedAction)
+    {
+        var result = _parser.Parse(SampleXml.Load(fixture));
+
+        Assert.Equal(expectedAction, result.ActionDescription);
+        Assert.Equal(@"\WinSentinelSampleCapture", result.ObjectName);
+        Assert.Equal(@"KAZYY3103\win10", result.ActorAccount);
+        Assert.True(result.IsRecognized);
+    }
+
+    /// <summary>
+    /// 200/201 KHONG co UserContext/UserName nhu 106/140/141 - actor phai lay tu
+    /// System/Security (giong nhom Service) chu khong duoc de trong.
+    /// </summary>
+    [Fact]
+    public void Parse_200_ActionStarted_LayLenhVaInstanceId()
+    {
+        var result = _parser.Parse(SampleXml.Load("200_task_action_started.xml"));
+
+        Assert.Equal("Task action started", result.ActionDescription);
+        Assert.Equal(@"\WinSentinelSampleCapture", result.ObjectName);
+        Assert.Equal("cmd.exe", result.TaskCommand);
+        Assert.False(string.IsNullOrWhiteSpace(result.TaskInstanceId));
+        Assert.Equal("S-1-5-18", result.ActorSid);
+        Assert.Equal("LocalSystem", result.ActorAccount);
+    }
+
+    /// <summary>
+    /// 201 kem ResultCode. Mau nay CO ActionName rong (task dung ComHandler, khong co
+    /// ten lenh) - phai ra null (qua helper Get()) chu khong phai chuoi rong.
+    /// </summary>
+    [Fact]
+    public void Parse_201_ActionCompleted_LayResultCode()
+    {
+        var result = _parser.Parse(SampleXml.Load("201_task_action_completed.xml"));
+
+        Assert.Equal("Task action completed", result.ActionDescription);
+        Assert.Equal("0", result.TaskActionResultCode);
+        Assert.False(string.IsNullOrWhiteSpace(result.TaskInstanceId));
+        Assert.Null(result.TaskCommand);
+    }
+
     // ---------------------------------------------------------------- Nhanh du phong
 
     /// <summary>
@@ -245,7 +314,7 @@ public class WindowsEventParserTests
     public void RecognizedEventIds_ChiGomEventIdDaCoMauThat()
     {
         Assert.Equal(
-            [4697, 4698, 4699, 4700, 4701, 4702, 7040, 7045],
+            [106, 140, 141, 200, 201, 4697, 4698, 4699, 4700, 4701, 4702, 7040, 7045],
             WindowsEventParser.RecognizedEventIds.Order());
 
         Assert.DoesNotContain(7036, WindowsEventParser.RecognizedEventIds);

@@ -100,6 +100,47 @@ public sealed record WindowsMonitorEvent
     /// <summary>Nguyên văn XML định nghĩa task (đã unescape).</summary>
     public string? TaskContentXml { get; init; }
 
+    // --- Rieng cho Microsoft-Windows-TaskScheduler/Operational (106/140/141/200/201) ---
+
+    /// <summary>
+    /// ID phiên chạy (TaskInstanceId), chỉ có ở event 200/201 — dùng để đối chiếu
+    /// "action started" với "action completed" của CÙNG một lần chạy.
+    /// </summary>
+    public string? TaskInstanceId { get; init; }
+
+    /// <summary>Mã kết quả trả về của action (ResultCode), chỉ có ở event 201.</summary>
+    public string? TaskActionResultCode { get; init; }
+
+    // --- Field hien thi kieu Event Viewer (buoc 8) ---
+    // TAT CA nullable - co y, ne bay da ghi trong CLAUDE.md: EF sinh defaultValue: ""
+    // cho cot string non-null, ma chuoi rong khong phai gia tri hop le de doc nguoc.
+
+    /// <summary>
+    /// Câu mô tả như tab "General" của Event Viewer. KHÔNG nằm trong XML — là kết quả
+    /// render message DLL của provider, chỉ lấy được lúc <c>EventRecord</c> còn sống
+    /// (xem <c>EventRecordDescriber</c>), hoặc từ <c>&lt;RenderingInfo&gt;</c> của event
+    /// forward qua WEF. null = event lưu trước bước 8; KHÔNG backfill được.
+    /// </summary>
+    public string? Description { get; init; }
+
+    /// <summary>1=Critical, 2=Error, 3=Warning, 4=Information, 5=Verbose.</summary>
+    public int? Level { get; init; }
+
+    public string? LevelDisplayName { get; init; }
+
+    public int? TaskCategoryId { get; init; }
+
+    /// <summary>
+    /// Metadata RIÊNG của từng provider (vd "Engine Lifecycle" của PowerShell) nên
+    /// không suy ra được từ số — phải hỏi provider hoặc đọc <c>&lt;RenderingInfo&gt;</c>.
+    /// </summary>
+    public string? TaskCategoryName { get; init; }
+
+    public string? OpcodeName { get; init; }
+
+    /// <summary>Tên đã dịch nếu có, không thì giá trị hex thô từ XML.</summary>
+    public string? Keywords { get; init; }
+
     /// <summary>
     /// false = Event ID này chưa có nhánh xử lý riêng (mới chỉ có dữ liệu thô trong
     /// <see cref="Data"/>). Dùng để biết chỗ nào cần bổ sung khi gặp event lạ.
