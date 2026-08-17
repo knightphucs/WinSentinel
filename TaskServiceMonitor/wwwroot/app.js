@@ -210,6 +210,12 @@ const logLeaves = {
  *   captured — mang `events` (realtime SignalR, co RiskLevel tu DB, chi 15 Event ID)
  *   channel  — doc live qua /api/logs/browse, thay MOI Event ID nhu Event Viewer
  * Cung mot bo cot cho ca hai (LogBrowseEventDto da co du field enrichment).
+ *
+ * O so "Event ID" trong "Bo loc" ap dung cho CA HAI che do, nhung theo hai co
+ * che khac nhau: "channel" gui thang len server qua query param (loc truoc khi
+ * tra ve), "captured" loc client-side bang leaf.eventIdFilter (xem
+ * renderLogLeaves/initLeafToolbars) vi khong co request nao de gui param theo.
+ * Ca hai deu chi ap dung luc bam "Tai lai", khong loc "song" theo tung ky tu go.
  */
 const leafModes = {};
 const leafLiveRows = {};
@@ -294,7 +300,12 @@ function renderLogLeaves(newestId) {
     const channelEvents = leaf.rows();
     const visible = channelEvents
       .filter((evt) => passesColumnFilters(evt, leaf))
-      .filter((evt) => matchesLeafSearch(evt, leaf.search));
+      .filter((evt) => matchesLeafSearch(evt, leaf.search))
+      // O "Event ID" trong "Bo loc": o che do "channel" da loc san tu server
+      // (query param), leaf.eventIdFilter chi duoc set o che do "captured" -
+      // xem initLeafToolbars. Ap them o day de o do CO tac dung ca hai che do,
+      // khong chi rieng "Toan bo channel" nhu truoc.
+      .filter((evt) => !leaf.eventIdFilter || String(evt.eventId) === leaf.eventIdFilter);
 
     tbody.replaceChildren();
     for (const evt of visible) {
@@ -434,11 +445,13 @@ function initColumnFilters(prefix, leaf) {
   });
 }
 
-// Cho logsbrowse.js dung lai nguyen co che loc theo cot. Leaf cua no khong doc mang
-// `events` ma doc payload /api/logs/browse - do la ly do leaf phai co rows()/onApply()
-// thay vi hardcode nguon nhu truoc.
+// Cho logsbrowse.js dung lai nguyen co che loc theo cot VA o tim kiem tu do (cung
+// mot dinh nghia "tim trong field nao" cho moi noi duyet log, khong lech nhau).
+// Leaf cua no khong doc mang `events` ma doc payload /api/logs/browse - do la ly
+// do leaf phai co rows()/onApply() thay vi hardcode nguon nhu truoc.
 window.initColumnFilters = initColumnFilters;
 window.passesColumnFilters = passesColumnFilters;
+window.matchesLeafSearch = matchesLeafSearch;
 
 // ---------------------------------------------------------------- Thanh cong cu 3 leaf curated
 
@@ -482,8 +495,10 @@ function initLeafToolbars() {
       leafModes[prefix] = mode.value;
 
       // Doi che do = doi tap gia tri cua moi cot -> bo loc cu di, khong thi bang co
-      // the rong tron ma khong hieu tai sao.
+      // the rong tron ma khong hieu tai sao. eventIdFilter cung reset cung ly do -
+      // gia tri go o che do truoc khong nen am tham con hieu luc o che do moi.
       leaf.filters = {};
+      leaf.eventIdFilter = null;
       for (let i = 0; i < leaf.columns.length; i++) updateColumnFilterIndicator(prefix, leaf, i);
 
       if (mode.value === "channel") {
@@ -500,8 +515,15 @@ function initLeafToolbars() {
     });
 
     reload?.addEventListener("click", () => {
-      if (leafModes[prefix] === "channel") loadLeafChannel(prefix, leaf);
-      else renderLogLeaves();
+      if (leafModes[prefix] === "channel") {
+        loadLeafChannel(prefix, leaf);
+      } else {
+        // Che do "captured" khong goi API nen khong co diem nao khac de doc o
+        // Event ID - phai doc ngay tai day, giong het cach loadLeafChannel doc
+        // no cho che do "channel".
+        leaf.eventIdFilter = document.getElementById(`${prefix}-eventid`)?.value.trim() || null;
+        renderLogLeaves();
+      }
     });
 
     document.getElementById(`${prefix}-export`)?.addEventListener("click", () =>

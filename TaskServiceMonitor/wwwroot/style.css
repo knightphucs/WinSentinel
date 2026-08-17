@@ -763,6 +763,18 @@ td.actions {
   flex-wrap: wrap;
 }
 
+/* Hang thu hai cua 3 panel "Nhat ky su kien" (Security/System/TaskScheduler-
+   Operational): nhom "thao tac tren du lieu dang hien" (quan ly view da luu +
+   xuat file), tach rieng khoi hang tren "quyet dinh du lieu gi dang hien"
+   (tim/nguon/bo loc/tai lai) bang duong ke - truoc gom chung MOT hang .filters
+   wrap tu do, be dong lon xon khong theo y nghia gi khi thanh cong cu chat hep
+   (~8 control/panel). Dung lai chinh class .filters (khong doi dinh nghia goc)
+   nen khong anh huong Dashboard/Tasks/Services/logs-browse dang dung 1 hang. */
+.filters--secondary {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 0.6rem;
+}
+
 /* Day nhom con lai sang phai: ben trai la thu de LOC, ben phai la thu de LAM.
    Thanh cong cu panel log co ~8 control, khong chia nhom thi thanh mot hang dai
    khong doc duoc dau la dau. */
@@ -782,6 +794,15 @@ td.actions {
   color: var(--text-muted);
 }
 
+/* BAY DA GAP (xem .filter-panel[hidden] ben duoi): [hidden] mac dinh trinh
+   duyet la display:none, nhung ".filters label { display:flex }" o tren la
+   CSS cua TRANG nen luon thang UA stylesheet du specificity thap hon - field
+   "Channel"/"File da luu" (logs-browse) an/hien qua thuoc tinh hidden se
+   KHONG an duoc gi neu thieu dong nay. */
+.filters label[hidden] {
+  display: none;
+}
+
 .filters select {
   padding: 0.3rem 0.5rem;
   font-size: 0.875rem;
@@ -790,6 +811,22 @@ td.actions {
   background: var(--surface);
   color: var(--text);
   min-width: 11rem;
+}
+
+/* O so trong ".filter-panel" (Event ID, So dong...) truoc day khong mang class
+   rieng nen an theo mac dinh trinh duyet - cung ly do da ghi o ".dialog input"
+   ben duoi: control khong co class phai style theo the [type], khong thi lech
+   han voi cac control con lai. Dung width CO DINH (khong phai min-width nhu
+   .search/.filters select o tren) vi noi dung chi la vai chu so - de rong
+   bang o tim kiem/select se rat lech ty le voi noi dung ben trong. */
+.filters input[type="number"] {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  width: 6rem;
 }
 
 .count {
@@ -1798,6 +1835,24 @@ tbody tr.is-selected:hover {
   font-size: 10px;
 }
 
+/* Vung hover cua tung cot gio (xem buildHourlyChart) - trong suot mac dinh, chi
+   hien khi group cha co class "is-hover" (JS gan luc pointerenter/focus, xem
+   attachTooltip trong charts.js). KHONG dat fill qua thuoc tinh SVG vi con [rect]
+   khong khai fill se mac dinh la DEN - phai o day de CSS thang mau nen. */
+.chart__col-hover {
+  fill: var(--surface-hover);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.chart__col.is-hover .chart__col-hover {
+  opacity: 1;
+}
+
+.chart__col {
+  outline-offset: 2px;
+}
+
 .chart-legend {
   display: flex;
   gap: 1rem;
@@ -1856,6 +1911,89 @@ tbody tr.is-selected:hover {
   color: var(--text-faint);
   white-space: nowrap;
   font-size: 0.7rem;
+}
+
+/* Phan hoi hover/focus cua tung dong (xem attachTooltip trong charts.js) - so
+   lieu von da hien san bang chu, day chi la tin hieu "dang tro vao dong nao"
+   cho khop ngon ngu tuong tac voi cot gio. */
+.barlist__item.is-hover .barlist__fill {
+  filter: brightness(1.15);
+}
+
+.barlist__item.is-hover .barlist__label {
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------- Tooltip bieu do */
+
+/* Mot the tooltip DUY NHAT dung chung cho ca cot gio lan thanh ngang (xem
+   ensureTooltip trong charts.js). position:fixed + JS tu tinh toa do theo
+   clientX/clientY, khong phu thuoc scroll cua trang. */
+.chart-tooltip {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  min-width: 8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  box-shadow: 0 8px 24px var(--shadow);
+  font-size: 0.75rem;
+}
+
+/* [hidden] mac dinh trinh duyet la display:none - khong co gi de "no de bang"
+   o day, nhung ghi ro theo dung thoi quen da lap lai nhieu lan trong file nay
+   (.filter-panel, .tree-children...) de khong ai vo tinh them display khac. */
+.chart-tooltip[hidden] {
+  display: none;
+}
+
+.chart-tooltip__title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+}
+
+.chart-tooltip__row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+}
+
+/* Gach mau ngan khoa theo mau chuoi du lieu - KHONG dung o vuong day mau: o
+   mat do nay mot khoi mau se nang hon can thiet, gach la du de nhan biet. */
+.chart-tooltip__key {
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.chart-tooltip__label {
+  flex: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Gia tri la thu nguoi xem CAN nhat luc hover, phai noi bat hon nhan chuoi -
+   nguoc thu bac voi legend (o do nhan la thu chinh). */
+.chart-tooltip__value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.chart-tooltip__summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
 }
 
 /* ---------------------------------------------------------- Dong thoi gian */

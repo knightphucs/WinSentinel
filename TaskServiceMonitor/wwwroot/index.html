@@ -383,7 +383,7 @@
             <strong>Scheduled Tasks</strong>
             <span id="tasks-count" class="count"></span>
             <button type="button" id="task-dialog-open" class="btn btn--primary">
-              Create Task…
+              Tạo task mới…
             </button>
             <button type="button" id="tasks-refresh" class="btn">
               Tải lại
@@ -674,7 +674,19 @@
             </div>
             <div class="filters__actions">
               <button type="button" id="logs-security-reload" class="btn btn--primary">Tải lại</button>
-              <button type="button" id="logs-security-export" class="btn">Lưu log…</button>
+            </div>
+          </div>
+          <!-- Hang 2, tach rieng khoi hang tren bang duong ke (.filters--secondary):
+             nhom "thao tac tren du lieu dang hien" (quan ly view + xuat file), khac
+             muc dich voi hang tren "quyet dinh du lieu gi dang hien" (tim/nguon/bo
+             loc). Truoc gom chung mot hang wrap tu do, be dong lon xon khi chat hep. -->
+          <div class="filters filters--secondary">
+            <div
+              class="custom-views"
+              data-scope="logs-security"
+              data-view-fields="logs-security-search,logs-security-mode,logs-security-eventid,logs-security-count-input"
+            ></div>
+            <div class="filters__actions">
               <label
                 >Định dạng
                 <select id="logs-security-format">
@@ -683,14 +695,10 @@
                   <option value="csv">CSV</option>
                 </select>
               </label>
+              <button type="button" id="logs-security-export" class="btn">Lưu log…</button>
               <button type="button" id="logs-security-export-selected" class="btn">
                 Lưu event đang chọn…
               </button>
-              <div
-                class="custom-views"
-                data-scope="logs-security"
-                data-view-fields="logs-security-search,logs-security-mode,logs-security-eventid,logs-security-count-input"
-              ></div>
             </div>
           </div>
           <!-- Bang o tren, chi tiet o duoi, keo duoc thanh giua - giong Event Viewer.
@@ -773,7 +781,16 @@
             </div>
             <div class="filters__actions">
               <button type="button" id="logs-system-reload" class="btn btn--primary">Tải lại</button>
-              <button type="button" id="logs-system-export" class="btn">Lưu log…</button>
+            </div>
+          </div>
+          <!-- Hang 2 - xem chu thich o panel Security ben tren, cung mot ly do. -->
+          <div class="filters filters--secondary">
+            <div
+              class="custom-views"
+              data-scope="logs-system"
+              data-view-fields="logs-system-search,logs-system-mode,logs-system-eventid,logs-system-count-input"
+            ></div>
+            <div class="filters__actions">
               <label
                 >Định dạng
                 <select id="logs-system-format">
@@ -782,14 +799,10 @@
                   <option value="csv">CSV</option>
                 </select>
               </label>
+              <button type="button" id="logs-system-export" class="btn">Lưu log…</button>
               <button type="button" id="logs-system-export-selected" class="btn">
                 Lưu event đang chọn…
               </button>
-              <div
-                class="custom-views"
-                data-scope="logs-system"
-                data-view-fields="logs-system-search,logs-system-mode,logs-system-eventid,logs-system-count-input"
-              ></div>
             </div>
           </div>
 
@@ -871,7 +884,16 @@
             </div>
             <div class="filters__actions">
               <button type="button" id="logs-taskscheduler-reload" class="btn btn--primary">Tải lại</button>
-              <button type="button" id="logs-taskscheduler-export" class="btn">Lưu log…</button>
+            </div>
+          </div>
+          <!-- Hang 2 - xem chu thich o panel Security ben tren, cung mot ly do. -->
+          <div class="filters filters--secondary">
+            <div
+              class="custom-views"
+              data-scope="logs-taskscheduler"
+              data-view-fields="logs-taskscheduler-search,logs-taskscheduler-mode,logs-taskscheduler-eventid,logs-taskscheduler-count-input"
+            ></div>
+            <div class="filters__actions">
               <label
                 >Định dạng
                 <select id="logs-taskscheduler-format">
@@ -880,14 +902,10 @@
                   <option value="csv">CSV</option>
                 </select>
               </label>
+              <button type="button" id="logs-taskscheduler-export" class="btn">Lưu log…</button>
               <button type="button" id="logs-taskscheduler-export-selected" class="btn">
                 Lưu event đang chọn…
               </button>
-              <div
-                class="custom-views"
-                data-scope="logs-taskscheduler"
-                data-view-fields="logs-taskscheduler-search,logs-taskscheduler-mode,logs-taskscheduler-eventid,logs-taskscheduler-count-input"
-              ></div>
             </div>
           </div>
           <div class="split">
@@ -941,55 +959,88 @@
           </p>
 
           <div class="filters">
+            <input
+              id="logs-browse-search"
+              class="search"
+              type="search"
+              placeholder="Tìm trong tên, hành vi, mô tả…"
+            />
             <label
+              >Nguồn
+              <!-- Khac nghia voi "Nguon" o 3 panel curated (App da bat/Toan bo
+                 channel) - panel nay VON DA luon doc live, khong co "App da
+                 bat" tuong duong. O day "Nguon" chon giua doc CHANNEL dang
+                 chay hay mo lai FILE .evtx da luu, thay vi phai bam ngam vao
+                 danh sach "File log da luu" o duoi. -->
+              <select id="logs-browse-mode">
+                <option value="channel">Channel đang chọn</option>
+                <option value="file">File đã lưu</option>
+              </select>
+            </label>
+            <label id="logs-browse-channel-field"
               >Channel
               <select id="logs-browse-channel"></select>
             </label>
-            <label
-              >Event ID (tuỳ chọn)
-              <input
-                id="logs-browse-eventid"
-                class="search"
-                type="number"
-                min="1"
-                placeholder="để trống = mọi ID"
-              />
+            <label id="logs-browse-file-field" hidden
+              >File đã lưu
+              <select id="logs-browse-file">
+                <option value="">(chưa có file nào)</option>
+              </select>
             </label>
-            <label
-              >Số dòng
-              <input
-                id="logs-browse-count-input"
-                class="search"
-                type="number"
-                min="1"
-                max="200"
-                value="50"
-              />
-            </label>
-            <button
-              type="button"
-              id="logs-browse-load"
-              class="btn btn--primary"
-            >
-              Tải
-            </button>
+            <div class="filter-menu">
+              <button type="button" class="btn filter-toggle" aria-expanded="false">
+                Bộ lọc
+                <span class="filter-badge" hidden>0</span>
+              </button>
+              <div class="filter-panel" hidden>
+                <label
+                  >Event ID (tuỳ chọn)
+                  <input
+                    id="logs-browse-eventid"
+                    type="number"
+                    min="1"
+                    placeholder="để trống = mọi ID"
+                  />
+                </label>
+                <label
+                  >Số dòng
+                  <input
+                    id="logs-browse-count-input"
+                    type="number"
+                    min="1"
+                    max="200"
+                    value="50"
+                  />
+                </label>
+              </div>
+            </div>
             <div class="filters__actions">
               <button
                 type="button"
-                id="logs-browse-pin"
-                class="btn"
-                title="Thêm channel đang chọn vào sidebar để mở nhanh lần sau"
+                id="logs-browse-load"
+                class="btn btn--primary"
               >
-                Ghim vào sidebar
+                Tải
               </button>
-              <button
-                type="button"
-                id="logs-browse-export"
-                class="btn"
-                title="Lưu channel đang chọn thành file .evtx trên máy chạy app"
-              >
-                Lưu log…
-              </button>
+            </div>
+          </div>
+          <!-- Hang 2 - cung quy uoc voi 3 panel curated (xem chu thich o panel
+             Security): trai la "quan ly/ghim", phai la nhom xuat file. -->
+          <div class="filters filters--secondary">
+            <button
+              type="button"
+              id="logs-browse-pin"
+              class="btn"
+              title="Thêm channel đang chọn vào sidebar để mở nhanh lần sau"
+            >
+              Ghim vào sidebar
+            </button>
+            <div
+              class="custom-views"
+              data-scope="logs-browse"
+              data-view-fields="logs-browse-search,logs-browse-mode,logs-browse-channel,logs-browse-file,logs-browse-eventid,logs-browse-count-input"
+            ></div>
+            <div class="filters__actions">
               <label
                 >Định dạng
                 <select id="logs-browse-format">
@@ -998,6 +1049,14 @@
                   <option value="csv">CSV</option>
                 </select>
               </label>
+              <button
+                type="button"
+                id="logs-browse-export"
+                class="btn"
+                title="Lưu channel đang chọn thành file .evtx trên máy chạy app"
+              >
+                Lưu log…
+              </button>
               <button
                 type="button"
                 id="logs-browse-export-selected"

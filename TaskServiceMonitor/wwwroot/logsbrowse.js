@@ -5,7 +5,12 @@
 // Payload da kem san rawXml nen khung chi tiet khong can loadDetail.
 
 const lb = {
+  search: document.getElementById("logs-browse-search"),
+  mode: document.getElementById("logs-browse-mode"),
+  channelField: document.getElementById("logs-browse-channel-field"),
   channel: document.getElementById("logs-browse-channel"),
+  fileField: document.getElementById("logs-browse-file-field"),
+  file: document.getElementById("logs-browse-file"),
   eventId: document.getElementById("logs-browse-eventid"),
   count: document.getElementById("logs-browse-count-input"),
   load: document.getElementById("logs-browse-load"),
@@ -20,6 +25,23 @@ const lb = {
   savedList: document.getElementById("saved-logs-list"),
   savedDir: document.getElementById("saved-logs-dir"),
 };
+
+/**
+ * "Nguon" = channel song hay file .evtx da luu - hai the gioi khac han nhau
+ * nen an/hien dung field, va vo hieu hoa nhung nut chi co nghia o mot ben:
+ * "Ghim vao sidebar" la ghim CHANNEL; "Luu log..." xuat CA channel thanh
+ * .evtx - Windows chi export duoc tu channel song, file da luu thi ĐÃ LA
+ * mot ban xuat roi, khong "xuat lai" duoc (xem exportCurrentChannel ben
+ * duoi/CLAUDE.md). "Luu event dang chon..." thi khac - no doc tu payload da
+ * tai (browseRows), hoat dong duoc voi ca hai nguon nen KHONG bi vo hieu o day.
+ */
+function applyModeVisibility() {
+  const isFile = lb.mode.value === "file";
+  lb.channelField.hidden = isFile;
+  lb.fileField.hidden = !isFile;
+  lb.pin.disabled = isFile;
+  lb.export.disabled = isFile;
+}
 
 // Payload cua lan tai gan nhat - nguon cho ca khung chi tiet lan loc theo cot.
 let browseRows = [];
@@ -42,6 +64,7 @@ const browseLeaf = {
     { label: "Người thực hiện", value: (e) => e.actorAccount },
   ],
   filters: {},
+  search: "",
   rows: () => browseRows,
   onApply: () => renderBrowseRows(),
 };
@@ -151,9 +174,10 @@ async function loadEvents() {
   const eventId = lb.eventId.value.trim();
   const count = lb.count.value.trim();
 
-  if (currentSource.kind === "channel") {
-    currentSource = { kind: "channel", name: lb.channel.value };
-  }
+  // Luon doc lai theo lb.mode.value (nguon su that duy nhat) truoc khi goi API -
+  // phong truong hop currentSource da lech vi mot ly do nao do chua qua kip
+  // syncCurrentSource() (xem chu thich tai dinh nghia ham).
+  syncCurrentSource();
   if (!currentSource.name) return;
 
   const params = new URLSearchParams();
@@ -195,7 +219,11 @@ async function loadEvents() {
 }
 
 function renderBrowseRows() {
-  const visible = browseRows.filter((evt) => window.passesColumnFilters(evt, browseLeaf));
+  const visible = browseRows
+    .filter((evt) => window.passesColumnFilters(evt, browseLeaf))
+    // Cung ham matchesLeafSearch voi 3 panel curated (app.js) - "tim trong ten,
+    // hanh vi, mo ta..." phai ra dung nghia giong het o do, khong tu dinh nghia lai.
+    .filter((evt) => window.matchesLeafSearch(evt, browseLeaf.search));
 
   lb.body.replaceChildren();
   for (const evt of visible) {
@@ -211,15 +239,41 @@ function renderBrowseRows() {
     : `${visible.length} / ${browseRows.length} event${label}`;
 }
 
-lb.load.addEventListener("click", () => {
-  // Bam "Tai" = quay ve doc channel dang chon trong dropdown.
-  currentSource = { kind: "channel", name: lb.channel.value };
-  loadEvents();
+// "input" (khong phai "change") de loc ngay tung ky tu go, giong 3 panel curated -
+// va giong cach customviews.js phat lai view (ban ca 'input' lan 'change').
+lb.search.addEventListener("input", () => {
+  browseLeaf.search = lb.search.value.trim().toLowerCase();
+  renderBrowseRows();
 });
 
-lb.channel.addEventListener("change", () => {
-  currentSource = { kind: "channel", name: lb.channel.value };
+/**
+ * MOT nguon su that duy nhat cho currentSource, luon hoi lb.mode.value truoc -
+ * KHONG de listener cua channel/file tu gan cung kind cua chinh no. Ly do: luc
+ * customviews.js khoi phuc mot view da luu, no set gia tri VA ban "change" cho
+ * TUNG field trong data-view-fields THEO THU TU, ke ca field khong thuoc nhanh
+ * dang chon (vd view luu o che do "channel" van co field "file" - rong - duoc
+ * ghi lai va ban change). Neu listener rieng gan cung kind theo chinh no, field
+ * khoi phuc SAU CUNG se de sai kind bat ke "Nguon" that su la gi.
+ */
+function syncCurrentSource() {
+  currentSource = lb.mode.value === "file"
+    ? { kind: "file", name: lb.file.value || null }
+    : { kind: "channel", name: lb.channel.value || null };
+}
+
+// Khong can tu goi syncCurrentSource() o day - loadEvents() da tu goi no dau
+// tien (doc dung "Nguon" dang chon o dropdown), goi lai o day la thua.
+lb.load.addEventListener("click", loadEvents);
+
+lb.mode.addEventListener("change", () => {
+  applyModeVisibility();
+  syncCurrentSource();
 });
+
+lb.channel.addEventListener("change", syncCurrentSource);
+lb.file.addEventListener("change", syncCurrentSource);
+
+applyModeVisibility();
 
 window.onTabShown.subscribe((tab) => {
   if (tab === "logs-browse") {
@@ -264,7 +318,10 @@ async function exportCurrentChannel() {
   } catch (err) {
     showToast("Không lưu được log: " + err.message, false);
   } finally {
-    lb.export.disabled = false;
+    // KHONG hardcode "= false": neu nguoi dung da doi sang "Nguon: File da luu"
+    // trong luc dang xuat (async), nut nay phai VAN o trang thai disabled dung
+    // theo mode hien tai, khong tu y bat lai.
+    applyModeVisibility();
   }
 }
 
@@ -281,6 +338,22 @@ async function loadSavedLogs() {
     for (const file of files) {
       lb.savedList.appendChild(buildSavedLogRow(file));
     }
+
+    // Dropdown "Nguon: File da luu" doc TU CUNG danh sach nay - giu lua chon cu
+    // neu file do con ton tai sau khi lam moi (vd chi vua xoa mot file KHAC).
+    const previous = lb.file.value;
+    lb.file.replaceChildren();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = files.length === 0 ? "(chưa có file nào)" : "Chọn file…";
+    lb.file.appendChild(placeholder);
+    for (const file of files) {
+      const option = document.createElement("option");
+      option.value = file.fileName;
+      option.textContent = file.fileName;
+      lb.file.appendChild(option);
+    }
+    if (files.some((f) => f.fileName === previous)) lb.file.value = previous;
   } catch (err) {
     console.error("Khong tai duoc danh sach file da luu:", err);
   }
@@ -299,8 +372,12 @@ function buildSavedLogRow(file) {
   openBtn.textContent = file.fileName;
   openBtn.title = `Mở file "${file.fileName}"`;
   openBtn.addEventListener("click", () => {
-    currentSource = { kind: "file", name: file.fileName };
-    loadEvents();
+    // Dong bo dropdown "Nguon"/"File da luu" theo dung file vua bam - khong thi
+    // bang hien du lieu tu file nhung dropdown van con dung "Channel dang chon".
+    lb.mode.value = "file";
+    lb.file.value = file.fileName;
+    applyModeVisibility();
+    loadEvents(); // tu goi syncCurrentSource(), doc dung 2 dong vua gan o tren
   });
 
   const size = document.createElement("span");
@@ -394,9 +471,12 @@ function renderPinnedChannels() {
     leaf.addEventListener("click", async () => {
       window.activateTab(leaf);
       await loadChannelList();
+      // Neu dang o "Nguon: File da luu" thi phai chuyen lai "Channel dang chon" -
+      // channel ghim luon la mot channel song, khong phai file.
+      lb.mode.value = "channel";
+      applyModeVisibility();
       lb.channel.value = channel;
-      currentSource = { kind: "channel", name: channel };
-      loadEvents();
+      loadEvents(); // tu goi syncCurrentSource(), doc dung 2 dong vua gan o tren
     });
 
     const unpin = document.createElement("button");
