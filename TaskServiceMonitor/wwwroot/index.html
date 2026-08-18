@@ -22,6 +22,50 @@
       <h1>TaskServiceMonitor</h1>
       <span id="status" class="status status--connecting">Đang kết nối…</span>
       <span id="elevation" class="status status--offline" hidden></span>
+
+      <!-- Chuong thong bao: xem nhanh "co gi moi" ma khong phai roi tab dang lam.
+         Danh sach day du o tab "Thong bao" (nut "Xem tat ca" ben duoi).
+         notifications.js lo toan bo phan nay. -->
+      <div class="bell-wrap">
+        <button
+          type="button"
+          id="bell"
+          class="bell"
+          aria-label="Thông báo"
+          aria-expanded="false"
+        >
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M8 1.5a3.5 3.5 0 0 0-3.5 3.5c0 3-1.2 4-1.2 4h9.4s-1.2-1-1.2-4A3.5 3.5 0 0 0 8 1.5zM6.6 11.5a1.5 1.5 0 0 0 2.8 0"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span id="bell-badge" class="bell-badge" hidden></span>
+        </button>
+
+        <div id="bell-panel" class="bell-panel" hidden>
+          <div class="bell-panel__head">
+            <strong>Thông báo</strong>
+            <button type="button" id="bell-mark-read" class="btn btn--small">
+              Đánh dấu đã đọc
+            </button>
+          </div>
+          <ul id="bell-list" class="bell-list"></ul>
+          <p id="bell-empty" class="bell-panel__empty" hidden>
+            Chưa có thông báo nào.
+          </p>
+          <div class="bell-panel__foot">
+            <button type="button" id="bell-see-all" class="btn btn--primary btn--small">
+              Xem tất cả thông báo
+            </button>
+          </div>
+        </div>
+      </div>
+
       <button type="button" id="theme-toggle" class="btn theme-toggle">
         Giao diện: Sáng
       </button>
@@ -42,6 +86,27 @@
           <!-- Mo tu nut "Xem chi tiet" tren card Dashboard. Van de o sidebar de quay
              lai duoc, va de activateTab co nut ma danh dau is-active. -->
           <button type="button" class="tab" data-tab="insight">Phân tích</button>
+
+          <!-- Badge dem canh bao CHUA XU LY. alerts.js cap nhat con so nay; de trong
+             thi CSS an han di (xem .tab-badge:empty) de khong hien vong tron rong. -->
+          <button type="button" class="tab" data-tab="alerts">
+            Cảnh báo
+            <span id="alerts-badge" class="tab-badge"></span>
+          </button>
+
+          <!-- Badge o day dem CHUA DOC (moc thoi gian trong localStorage), khac han
+             badge cua tab "Canh bao" - cai do dem CHUA XU LY (co ghi trong DB).
+             Doc roi van con phai xu ly, nen hai con so co the lech nhau, va nen lech. -->
+          <button type="button" class="tab" data-tab="notifications">
+            Thông báo
+            <span id="notifications-badge" class="tab-badge"></span>
+          </button>
+
+          <!-- Mo tu badge "↺ khoi phuc N" o Log Summary. Van de o sidebar de quay
+             lai duoc va de activateTab co nut ma danh dau is-active. -->
+          <button type="button" class="tab" data-tab="recovery">
+            Khôi phục
+          </button>
 
           <!-- Cay phan cap kieu Event Viewer: nut folder KHONG mang class "tab" nen
              khong bi co che chuyen-tab hien co trong app.js bat vao; cac leaf ben
@@ -347,12 +412,32 @@
                     <option value="Low">Low</option>
                   </select>
                 </label>
+
+                <!-- KHAC 3 filter tren: cai nay goi LAI /api/events chu khong loc mang
+                   dang co. Client chi giu 200 event moi nhat nen loc client cho khung
+                   "7 ngay" se ra sai - xem ghi chu o dashboardTime trong app.js. -->
+                <label>
+                  Khoảng thời gian
+                  <select id="dashboard-time-preset">
+                    <option value="">Tất cả</option>
+                    <option value="1h">1 giờ qua</option>
+                    <option value="6h">6 giờ qua</option>
+                    <option value="24h">24 giờ qua</option>
+                    <option value="7d">7 ngày qua</option>
+                    <option value="30d">30 ngày qua</option>
+                    <option value="custom">Tuỳ chọn…</option>
+                  </select>
+                </label>
+                <div class="timerange" id="dashboard-time-custom" hidden>
+                  <label>Từ<input type="datetime-local" id="dashboard-time-from" /></label>
+                  <label>Đến<input type="datetime-local" id="dashboard-time-to" /></label>
+                </div>
               </div>
             </div>
             <div
               class="custom-views"
               data-scope="dashboard"
-              data-view-fields="filter-host,filter-type,filter-risk"
+              data-view-fields="filter-host,filter-type,filter-risk,dashboard-time-preset,dashboard-time-from,dashboard-time-to"
             ></div>
             <span id="count" class="count"></span>
           </section>
@@ -627,6 +712,353 @@
           </p>
         </section>
 
+        <!-- ============================================================== Canh bao
+       Tra loi truc tiep yeu cau mentor: "gom nhung log nay va alert len webapp".
+       Khac tab Dashboard o cho: Dashboard liet ke EVENT (dong nhat ky), tab nay liet
+       ke KET LUAN - moi dong noi ro TEN HANH VI va BANG CHUNG. Mot event co the sinh
+       nhieu canh bao. Xem docs/hanh-vi-mapping.md. -->
+        <section id="panel-alerts" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Cảnh báo hành vi</strong>
+          </div>
+
+          <!-- Dung .controlbar (chung style voi .create-form o tab Tasks/Services)
+             thay vi de label/select tran trong .toolbar: de tran thi trinh duyet tu
+             ve select theo mac dinh he dieu hanh, khong an theo theme sang/toi, va
+             .count (margin-left:auto) day het phan con lai sang phai. -->
+          <div class="controlbar">
+            <label>
+              Mức tối thiểu
+              <select id="alerts-filter-severity">
+                <option value="Medium">Medium trở lên</option>
+                <option value="High">Chỉ High</option>
+                <option value="Low">Tất cả (kể cả ghi nhận)</option>
+              </select>
+            </label>
+
+            <label>
+              Hành vi
+              <select id="alerts-filter-rule">
+                <option value="">Tất cả</option>
+              </select>
+            </label>
+
+            <label>
+              Trạng thái
+              <select id="alerts-filter-ack">
+                <option value="false">Chưa xử lý</option>
+                <option value="">Tất cả</option>
+                <option value="true">Đã xử lý</option>
+              </select>
+            </label>
+
+            <label>
+              Khoảng thời gian
+              <select id="alerts-time-preset">
+                <option value="">Tất cả</option>
+                <option value="1h">1 giờ qua</option>
+                <option value="6h">6 giờ qua</option>
+                <option value="24h">24 giờ qua</option>
+                <option value="7d">7 ngày qua</option>
+                <option value="30d">30 ngày qua</option>
+                <option value="custom">Tuỳ chọn…</option>
+              </select>
+            </label>
+            <div class="timerange" id="alerts-time-custom" hidden>
+              <label>Từ<input type="datetime-local" id="alerts-time-from" /></label>
+              <label>Đến<input type="datetime-local" id="alerts-time-to" /></label>
+            </div>
+
+            <button type="button" id="alerts-refresh" class="btn">Tải lại</button>
+            <button type="button" id="alerts-ack-all" class="btn">
+              Đánh dấu đã xử lý hết
+            </button>
+
+            <span id="alerts-count" class="count"></span>
+          </div>
+
+          <p class="note">
+            Mức <strong>Low</strong> là "ghi nhận hành vi" (tạo task, cài service) —
+            mentor có liệt kê nên vẫn lưu, nhưng mặc định ẩn để không lấn át cảnh báo
+            thật. Rule là so khớp chuỗi và đường dẫn, <strong>không phải sandbox</strong>.
+          </p>
+
+          <!-- Bang rule: chinh la bang phan ra "hanh vi -> Event ID" cua mentor, lay
+             tu GET /api/alerts/rules. De ngay trong app de doc app la biet app dang
+             tim nhung gi, khong phai mo file markdown.
+             Dat TREN bang canh bao (ngay duoi filter): doc "app dang tim gi" truoc roi
+             moi doc "app tim duoc gi" thi de theo hon. Van dong san bang <details>
+             nen khong chiem cho khi chua can. -->
+          <details class="rules-panel" id="alerts-rules-panel">
+            <summary>Bảng hành vi đang theo dõi (danh mục rule)</summary>
+            <div class="table-wrap">
+              <table id="alerts-rules-table">
+                <thead>
+                  <tr>
+                    <th>Mã rule</th>
+                    <th>Hành vi</th>
+                    <th>Mức</th>
+                    <th>Loại</th>
+                    <th>Event ID</th>
+                    <th>Vì sao đáng quan tâm</th>
+                  </tr>
+                </thead>
+                <tbody id="alerts-rules-body"></tbody>
+              </table>
+            </div>
+          </details>
+
+          <div class="table-wrap">
+            <table id="alerts-table">
+              <thead>
+                <tr>
+                  <th>Mức</th>
+                  <th>Thời gian</th>
+                  <th>Hành vi</th>
+                  <th>Máy</th>
+                  <th>Đối tượng</th>
+                  <th>Bằng chứng</th>
+                  <th>Event</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="alerts-body"></tbody>
+            </table>
+          </div>
+
+          <p id="alerts-empty" class="empty">Chưa có cảnh báo nào.</p>
+        </section>
+
+        <!-- ======================================================= Tab Thong bao
+       KHAC tab "Canh bao": cho do la kho tra cuu (loc, danh dau da XU LY), cho nay
+       la dong thoi gian "co gi moi tu luc toi roi mat" (danh dau da DOC). Mot canh
+       bao da doc van dang cho xu ly, nen hai trang thai khong thay the nhau.
+       Thong bao cung khong chi co canh bao - viec app doc bu event sau restart cung
+       vao day, ma no khong phai hanh vi dang ngo nao ca. -->
+        <section id="panel-notifications" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Thông báo</strong>
+          </div>
+
+          <div class="controlbar">
+            <label>
+              Loại
+              <select id="notifications-filter-kind">
+                <option value="">Tất cả</option>
+                <option value="alert">Cảnh báo hành vi</option>
+                <option value="system">Hệ thống</option>
+              </select>
+            </label>
+
+            <label>
+              Mức tối thiểu
+              <select id="notifications-filter-severity">
+                <option value="">Tất cả</option>
+                <option value="Medium">Medium trở lên</option>
+                <option value="High">Chỉ High</option>
+              </select>
+            </label>
+
+            <label>
+              Khoảng thời gian
+              <select id="notifications-time-preset">
+                <option value="">Tất cả</option>
+                <option value="1h">1 giờ qua</option>
+                <option value="6h">6 giờ qua</option>
+                <option value="24h">24 giờ qua</option>
+                <option value="7d">7 ngày qua</option>
+                <option value="30d">30 ngày qua</option>
+                <option value="custom">Tuỳ chọn…</option>
+              </select>
+            </label>
+            <div class="timerange" id="notifications-time-custom" hidden>
+              <label>Từ<input type="datetime-local" id="notifications-time-from" /></label>
+              <label>Đến<input type="datetime-local" id="notifications-time-to" /></label>
+            </div>
+
+            <label class="check">
+              <input type="checkbox" id="notifications-only-unread" /> Chỉ hiện
+              chưa đọc
+            </label>
+
+            <button type="button" id="notifications-refresh" class="btn">
+              Tải lại
+            </button>
+            <button type="button" id="notifications-mark-read" class="btn">
+              Đánh dấu đã đọc hết
+            </button>
+
+            <span id="notifications-count" class="count"></span>
+          </div>
+
+          <p class="note">
+            "Chưa đọc" tính từ <strong>lần cuối bạn bấm "đánh dấu đã đọc"</strong>
+            (lưu ở trình duyệt này), khác hẳn "chưa xử lý" của tab Cảnh báo (lưu
+            trong CSDL, dùng chung cho mọi máy). Mức <strong>Low</strong> không đưa
+            lên chuông — nếu không chuông sẽ kêu mỗi lần có task được tạo.
+          </p>
+
+          <div class="table-wrap">
+            <table id="notifications-table">
+              <thead>
+                <tr>
+                  <th>Trạng thái</th>
+                  <th>Mức</th>
+                  <th>Thời gian</th>
+                  <th>Loại</th>
+                  <th>Nội dung</th>
+                  <th>Máy</th>
+                  <th>Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody id="notifications-body"></tbody>
+            </table>
+          </div>
+
+          <p id="notifications-empty" class="empty">Chưa có thông báo nào.</p>
+        </section>
+
+        <!-- ======================================================= Tab Khoi phuc
+       Log Summary chi hien badge "↺ khoi phuc N" - biet la CO doc bu nhung khong
+       biet doc bu duoc NHUNG GI. Trang nay liet ke dung N event do. Cach xac dinh
+       "event nao la khoi phuc" ghi day du o ManagementEndpoints.GetRecovered. -->
+        <section id="panel-recovery" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Event đã khôi phục sau khi app khởi động lại</strong>
+            <span id="recovery-count" class="count"></span>
+            <button type="button" id="recovery-refresh" class="btn">Tải lại</button>
+          </div>
+
+          <div class="statline">
+            <div class="statline__item">
+              <span class="statline__label">Phiên chạy hiện tại bắt đầu lúc</span>
+              <strong id="recovery-session">—</strong>
+            </div>
+            <div class="statline__item">
+              <span class="statline__label">Tổng event đọc bù</span>
+              <strong id="recovery-total">0</strong>
+            </div>
+          </div>
+
+          <!-- Hien khi so event doc bu vuot qua tran `take` cua API. Noi thang ra
+             thay vi de bang im lang thieu dong. -->
+          <p id="recovery-truncated" class="note note--warn" hidden></p>
+
+          <!-- Hien khi dang xem mot channel app KHONG theo doi (doc truc tiep) - phai
+             noi ro day khong phai du lieu app da bat duoc. -->
+          <p id="recovery-live-note" class="note note--warn" hidden></p>
+
+          <p class="note">
+            App không dùng bookmark: mỗi channel nhớ <strong>RecordId lớn nhất đã
+            lưu</strong> làm con trỏ, khởi động lại thì đọc tiếp từ đó. Những event
+            nằm giữa con trỏ cũ và bản ghi mới nhất của log chính là phần sinh ra
+            trong lúc app tắt — bảng dưới là đúng phần đó. Hai mốc này tính lại mỗi
+            lần khởi động, nên trang này nói về <strong>phiên chạy hiện tại</strong>,
+            không phải lịch sử mọi lần khôi phục.
+          </p>
+
+          <p class="note">
+            Chỉ những channel trong <code>EventLog:Channels</code> mới có mốc để đọc
+            bù — muốn app <em>theo dõi</em> thêm channel thì thêm vào
+            <code>appsettings.json</code> rồi khởi động lại. Nhưng để <em>xem</em>
+            channel khác trong đúng khoảng mất kết nối thì không cần khởi động lại:
+            chọn nó ở nhóm "Đọc trực tiếp" trong ô Log Name bên dưới.
+          </p>
+
+          <details class="rules-panel" open>
+            <summary>Mốc khôi phục theo từng channel</summary>
+            <div class="table-wrap">
+              <table id="recovery-channels-table">
+                <thead>
+                  <tr>
+                    <th>Log Name</th>
+                    <th>Đã đọc bù</th>
+                    <th title="RecordId lớn nhất đã lưu trong CSDL lúc app khởi động">
+                      Con trỏ cũ
+                    </th>
+                    <th title="RecordId mới nhất đang có trong log tại thời điểm subscribe">
+                      Mốc đích
+                    </th>
+                    <th>Cửa sổ không nhìn thấy gì</th>
+                    <th>Kéo dài</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody id="recovery-channels-body"></tbody>
+              </table>
+            </div>
+          </details>
+
+          <div class="controlbar">
+            <!-- MOT select duy nhat, chia hai nhom:
+                 - "App da doc bu": loc tren danh sach da nap (3 channel dang theo doi).
+                 - "Doc truc tiep": channel app KHONG theo doi nen khong co gi de doc bu -
+                   doc thang tu Windows trong khoang mat ket noi, de van xem duoc "luc do
+                   channel kia co gi". Hai nhom khac han nhau ve ban chat nen phai tach
+                   optgroup, khong tron mot danh sach phang. -->
+            <label>
+              Log Name
+              <select id="recovery-filter-channel">
+                <option value="">Tất cả (app đã đọc bù)</option>
+              </select>
+            </label>
+
+            <button type="button" id="recovery-use-downtime" class="btn">
+              Dùng khoảng mất kết nối
+            </button>
+
+            <label>
+              Tìm
+              <input
+                id="recovery-search"
+                class="search"
+                type="search"
+                placeholder="tên, hành vi, mô tả…"
+              />
+            </label>
+
+            <label>
+              Khoảng thời gian
+              <select id="recovery-time-preset">
+                <option value="">Tất cả</option>
+                <option value="1h">1 giờ qua</option>
+                <option value="6h">6 giờ qua</option>
+                <option value="24h">24 giờ qua</option>
+                <option value="7d">7 ngày qua</option>
+                <option value="30d">30 ngày qua</option>
+                <option value="custom">Tuỳ chọn…</option>
+              </select>
+            </label>
+            <div class="timerange" id="recovery-time-custom" hidden>
+              <label>Từ<input type="datetime-local" id="recovery-time-from" /></label>
+              <label>Đến<input type="datetime-local" id="recovery-time-to" /></label>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table id="recovery-table">
+              <thead>
+                <tr>
+                  <th>Rủi ro</th>
+                  <th>Thời gian</th>
+                  <th title="EventRecordID — số thứ tự bản ghi trong channel">
+                    RecordId
+                  </th>
+                  <th>Log Name</th>
+                  <th>Event ID</th>
+                  <th>Máy</th>
+                  <th>Tên</th>
+                  <th>Hành vi</th>
+                  <th>Người thực hiện</th>
+                </tr>
+              </thead>
+              <tbody id="recovery-body"></tbody>
+            </table>
+          </div>
+
+          <p id="recovery-empty" class="empty">Đang tải…</p>
+        </section>
+
         <!-- ============================================================ Nhat ky su kien
        Mac dinh doc LAI mang `events` da co san tren client (che do "App da bat").
        Chuyen sang "Toan bo channel" thi doc live qua /api/logs/browse - xem
@@ -670,6 +1102,26 @@
                   >Số dòng (chế độ "Toàn bộ channel")
                   <input id="logs-security-count-input" type="number" min="1" max="200" value="50" />
                 </label>
+                <!-- Loc o SERVER khi che do la "Toan bo channel" (XPath TimeCreated), loc tren
+                   mang `events` khi la "App da bat". Can thiet vi reader chi doc N event MOI
+                   NHAT roi dung - khong co bo loc nay thi khong the voi toi event cu (vi du
+                   phan sinh ra luc app dang tat). -->
+                <label
+                  >Khoảng thời gian
+                  <select id="logs-security-time-preset">
+                    <option value="">Tất cả</option>
+                    <option value="1h">1 giờ qua</option>
+                    <option value="6h">6 giờ qua</option>
+                    <option value="24h">24 giờ qua</option>
+                    <option value="7d">7 ngày qua</option>
+                    <option value="30d">30 ngày qua</option>
+                    <option value="custom">Tuỳ chọn…</option>
+                  </select>
+                </label>
+                <div class="timerange" id="logs-security-time-custom" hidden>
+                  <label>Từ<input type="datetime-local" id="logs-security-time-from" /></label>
+                  <label>Đến<input type="datetime-local" id="logs-security-time-to" /></label>
+                </div>
               </div>
             </div>
             <div class="filters__actions">
@@ -684,7 +1136,7 @@
             <div
               class="custom-views"
               data-scope="logs-security"
-              data-view-fields="logs-security-search,logs-security-mode,logs-security-eventid,logs-security-count-input"
+              data-view-fields="logs-security-time-preset,logs-security-time-from,logs-security-time-to,logs-security-search,logs-security-mode,logs-security-eventid,logs-security-count-input"
             ></div>
             <div class="filters__actions">
               <label
@@ -777,6 +1229,26 @@
                   >Số dòng (chế độ "Toàn bộ channel")
                   <input id="logs-system-count-input" type="number" min="1" max="200" value="50" />
                 </label>
+                <!-- Loc o SERVER khi che do la "Toan bo channel" (XPath TimeCreated), loc tren
+                   mang `events` khi la "App da bat". Can thiet vi reader chi doc N event MOI
+                   NHAT roi dung - khong co bo loc nay thi khong the voi toi event cu (vi du
+                   phan sinh ra luc app dang tat). -->
+                <label
+                  >Khoảng thời gian
+                  <select id="logs-system-time-preset">
+                    <option value="">Tất cả</option>
+                    <option value="1h">1 giờ qua</option>
+                    <option value="6h">6 giờ qua</option>
+                    <option value="24h">24 giờ qua</option>
+                    <option value="7d">7 ngày qua</option>
+                    <option value="30d">30 ngày qua</option>
+                    <option value="custom">Tuỳ chọn…</option>
+                  </select>
+                </label>
+                <div class="timerange" id="logs-system-time-custom" hidden>
+                  <label>Từ<input type="datetime-local" id="logs-system-time-from" /></label>
+                  <label>Đến<input type="datetime-local" id="logs-system-time-to" /></label>
+                </div>
               </div>
             </div>
             <div class="filters__actions">
@@ -788,7 +1260,7 @@
             <div
               class="custom-views"
               data-scope="logs-system"
-              data-view-fields="logs-system-search,logs-system-mode,logs-system-eventid,logs-system-count-input"
+              data-view-fields="logs-system-time-preset,logs-system-time-from,logs-system-time-to,logs-system-search,logs-system-mode,logs-system-eventid,logs-system-count-input"
             ></div>
             <div class="filters__actions">
               <label
@@ -880,6 +1352,26 @@
                   >Số dòng (chế độ "Toàn bộ channel")
                   <input id="logs-taskscheduler-count-input" type="number" min="1" max="200" value="50" />
                 </label>
+                <!-- Loc o SERVER khi che do la "Toan bo channel" (XPath TimeCreated), loc tren
+                   mang `events` khi la "App da bat". Can thiet vi reader chi doc N event MOI
+                   NHAT roi dung - khong co bo loc nay thi khong the voi toi event cu (vi du
+                   phan sinh ra luc app dang tat). -->
+                <label
+                  >Khoảng thời gian
+                  <select id="logs-taskscheduler-time-preset">
+                    <option value="">Tất cả</option>
+                    <option value="1h">1 giờ qua</option>
+                    <option value="6h">6 giờ qua</option>
+                    <option value="24h">24 giờ qua</option>
+                    <option value="7d">7 ngày qua</option>
+                    <option value="30d">30 ngày qua</option>
+                    <option value="custom">Tuỳ chọn…</option>
+                  </select>
+                </label>
+                <div class="timerange" id="logs-taskscheduler-time-custom" hidden>
+                  <label>Từ<input type="datetime-local" id="logs-taskscheduler-time-from" /></label>
+                  <label>Đến<input type="datetime-local" id="logs-taskscheduler-time-to" /></label>
+                </div>
               </div>
             </div>
             <div class="filters__actions">
@@ -891,7 +1383,7 @@
             <div
               class="custom-views"
               data-scope="logs-taskscheduler"
-              data-view-fields="logs-taskscheduler-search,logs-taskscheduler-mode,logs-taskscheduler-eventid,logs-taskscheduler-count-input"
+              data-view-fields="logs-taskscheduler-time-preset,logs-taskscheduler-time-from,logs-taskscheduler-time-to,logs-taskscheduler-search,logs-taskscheduler-mode,logs-taskscheduler-eventid,logs-taskscheduler-count-input"
             ></div>
             <div class="filters__actions">
               <label
@@ -1012,6 +1504,26 @@
                     value="50"
                   />
                 </label>
+                <!-- Loc o SERVER khi che do la "Toan bo channel" (XPath TimeCreated), loc tren
+                   mang `events` khi la "App da bat". Can thiet vi reader chi doc N event MOI
+                   NHAT roi dung - khong co bo loc nay thi khong the voi toi event cu (vi du
+                   phan sinh ra luc app dang tat). -->
+                <label
+                  >Khoảng thời gian
+                  <select id="logs-browse-time-preset">
+                    <option value="">Tất cả</option>
+                    <option value="1h">1 giờ qua</option>
+                    <option value="6h">6 giờ qua</option>
+                    <option value="24h">24 giờ qua</option>
+                    <option value="7d">7 ngày qua</option>
+                    <option value="30d">30 ngày qua</option>
+                    <option value="custom">Tuỳ chọn…</option>
+                  </select>
+                </label>
+                <div class="timerange" id="logs-browse-time-custom" hidden>
+                  <label>Từ<input type="datetime-local" id="logs-browse-time-from" /></label>
+                  <label>Đến<input type="datetime-local" id="logs-browse-time-to" /></label>
+                </div>
               </div>
             </div>
             <div class="filters__actions">
@@ -1038,7 +1550,7 @@
             <div
               class="custom-views"
               data-scope="logs-browse"
-              data-view-fields="logs-browse-search,logs-browse-mode,logs-browse-channel,logs-browse-file,logs-browse-eventid,logs-browse-count-input"
+              data-view-fields="logs-browse-time-preset,logs-browse-time-from,logs-browse-time-to,logs-browse-search,logs-browse-mode,logs-browse-channel,logs-browse-file,logs-browse-eventid,logs-browse-count-input"
             ></div>
             <div class="filters__actions">
               <label
@@ -1155,12 +1667,26 @@
     <script src="charts.js"></script>
     <!-- Truoc manage.js: manage.js goi window.buildTaskDialog. -->
     <script src="taskdialog.js"></script>
+    <!-- PHAI dung truoc app.js: app.js goi window.createTimeRange ngay luc chay de
+       dung bo loc thoi gian cua Dashboard. -->
+    <script src="timerange.js"></script>
+    <!-- PHAI dung truoc app.js: app.js goi window.recoveryMarks.whenReady de ve lai
+       bang sau khi moc khoi phuc ve. -->
+    <script src="recoverymark.js"></script>
     <script src="app.js"></script>
     <script src="manage.js"></script>
     <script src="logsbrowse.js"></script>
     <script src="summary.js"></script>
     <!-- Sau app.js: dung window.getEvents/formatTime/openEventDetail. -->
     <script src="insight.js"></script>
+    <!-- Sau app.js: dung window.eventBus va window.formatTime do app.js xuat ra. -->
+    <script src="alerts.js"></script>
+    <!-- Sau app.js (window.alertBus/activateTab/openEventDetail) va sau timerange.js. -->
+    <script src="notifications.js"></script>
+    <!-- PHAI dung truoc summary.js? KHONG - summary.js chi goi window.showRecovery
+       ben trong mot click handler, luc do file nay da chay xong tu lau. Dat o day de
+       giu nhom "tab moi" lien nhau. -->
+    <script src="recovery.js"></script>
     <script src="customviews.js"></script>
   </body>
 </html>

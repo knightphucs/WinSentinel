@@ -156,13 +156,19 @@ public static class EventEndpoints
     }
 
     /// <summary>
-    /// GET /api/events?host=&amp;type=&amp;take=50 — mới nhất trước.
+    /// GET /api/events?host=&amp;type=&amp;risk=&amp;from=&amp;to=&amp;take=50 — mới nhất trước.
+    ///
+    /// <c>from</c>/<c>to</c> lọc theo <c>TimeCreated</c> (lúc hành vi THỰC SỰ xảy ra),
+    /// không phải lúc app ghi vào DB — quan trọng khi đọc bù sau restart, vì hai mốc
+    /// đó cách nhau đúng bằng khoảng thời gian app tắt.
     /// </summary>
     private static async Task<IResult> GetEvents(
         MonitorDbContext db,
         string? host,
         string? type,
         string? risk,
+        string? from,
+        string? to,
         int? take,
         CancellationToken ct)
     {
@@ -196,9 +202,29 @@ public static class EventEndpoints
             riskLevel = parsedRisk;
         }
 
+        if (!TimeRangeFilter.TryParse(from, out var fromUtc))
+        {
+            return TimeRangeFilter.Invalid("from", from!);
+        }
+
+        if (!TimeRangeFilter.TryParse(to, out var toUtc))
+        {
+            return TimeRangeFilter.Invalid("to", to!);
+        }
+
         var limit = Math.Clamp(take ?? DefaultTake, 1, MaxTake);
 
         var query = db.Events.AsNoTracking();
+
+        if (fromUtc is DateTime since)
+        {
+            query = query.Where(e => e.TimeCreated >= since);
+        }
+
+        if (toUtc is DateTime until)
+        {
+            query = query.Where(e => e.TimeCreated <= until);
+        }
 
         if (!string.IsNullOrWhiteSpace(host))
         {

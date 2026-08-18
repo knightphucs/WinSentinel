@@ -53,10 +53,21 @@ public static class LogBrowseEndpoints
     /// </summary>
     private static async Task<IResult> Browse(
         AdHocLogReader reader, SavedLogStore store,
-        string? channel, string? savedFile, int? eventId, int? count, CancellationToken ct)
+        string? channel, string? savedFile, int? eventId, int? count,
+        string? from, string? to, CancellationToken ct)
     {
         var hasChannel = !string.IsNullOrWhiteSpace(channel);
         var hasFile = !string.IsNullOrWhiteSpace(savedFile);
+
+        if (!TimeRangeFilter.TryParse(from, out var fromUtc))
+        {
+            return TimeRangeFilter.Invalid("from", from!);
+        }
+
+        if (!TimeRangeFilter.TryParse(to, out var toUtc))
+        {
+            return TimeRangeFilter.Invalid("to", to!);
+        }
 
         if (hasChannel == hasFile)
         {
@@ -98,7 +109,7 @@ public static class LogBrowseEndpoints
 
         try
         {
-            var events = await reader.ReadAsync(source, eventId, limit, ct, pathType);
+            var events = await reader.ReadAsync(source, eventId, limit, ct, pathType, fromUtc, toUtc);
             return Results.Ok(events.Select(LogBrowseEventDto.From));
         }
         catch (EventLogNotFoundException ex)

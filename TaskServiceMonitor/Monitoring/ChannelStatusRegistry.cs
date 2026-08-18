@@ -52,6 +52,13 @@ public sealed class ChannelStatusRegistry
     private readonly ConcurrentDictionary<string, ChannelStatus> _statuses = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Mốc bắt đầu phiên chạy hiện tại. Registry là singleton nên khởi tạo cùng lúc
+    /// với app — dùng làm mốc "app bật lại lúc nào" cho trang Khôi phục, thay vì
+    /// <c>Process.StartTime</c> (giờ local, và lệch khi chạy qua <c>dotnet run</c>).
+    /// </summary>
+    public DateTime SessionStartedUtc { get; } = DateTime.UtcNow;
+
+    /// <summary>
     /// <paramref name="resumeFromRecordId"/>: cursor dùng để subscribe lần này (null = lần
     /// đầu, không có lịch sử để resume). <paramref name="catchUpTargetRecordId"/>: snapshot
     /// "RecordId mới nhất hiện có trong log" đo lúc subscribe - mốc để đếm

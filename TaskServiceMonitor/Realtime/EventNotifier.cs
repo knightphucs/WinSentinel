@@ -30,4 +30,22 @@ public sealed class EventNotifier(
                 evt.EventId);
         }
     }
+
+    /// <summary>
+    /// Đẩy cảnh báo vừa sinh lên dashboard. Gửi nguyên <see cref="Alert"/> chứ không
+    /// cần DTO rút gọn như event: cảnh báo không mang RawXml, bản thân nó đã nhỏ.
+    /// </summary>
+    public async Task NotifyAlertAsync(Alert alert, CancellationToken ct = default)
+    {
+        try
+        {
+            await hub.Clients.All.SendAsync(MonitorHub.ReceiveAlertMessage, alert, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Khong day duoc canh bao {RuleId} len dashboard qua SignalR (van da luu DB).",
+                alert.RuleId);
+        }
+    }
 }

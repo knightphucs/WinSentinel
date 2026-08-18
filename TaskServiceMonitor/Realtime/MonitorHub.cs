@@ -12,4 +12,11 @@ public sealed class MonitorHub : Hub
 
     /// <summary>Tên message gửi cho client. Client lắng nghe đúng chuỗi này.</summary>
     public const string ReceiveEventMessage = "ReceiveEvent";
+
+    /// <summary>
+    /// Cảnh báo mới (bước 11). Tách khỏi <see cref="ReceiveEventMessage"/> vì hai thứ
+    /// khác nhau về bản chất: event là dòng nhật ký, cảnh báo là kết luận — và một
+    /// event có thể sinh ra nhiều cảnh báo.
+    /// </summary>
+    public const string ReceiveAlertMessage = "ReceiveAlert";
 }

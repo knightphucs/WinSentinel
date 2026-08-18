@@ -4,6 +4,21 @@
 // va services.msc. Moi thao tac ghi deu sinh event Windows that; feed cuoi moi tab
 // hien ngay event vua sinh ra de khoi phai chuyen sang tab Dashboard.
 
+/* ⚠️ BẮT BUỘC bọc trong IIFE — đừng gỡ ra.
+ *
+ * Đây là <script> thường, không phải module, nên MỌI khai báo top-level đều rơi vào
+ * CHUNG một global scope với tất cả file JS khác. File nạp sau ghi đè lặng lẽ lên
+ * hàm cùng tên của file nạp trước — không lỗi, không cảnh báo, chỉ là chạy nhầm hàm.
+ * Đã gặp thật một lần với alerts.js (`render`/`buildRow`/`cell` đè lên app.js làm
+ * bảng Dashboard trống trơn), và file này với logsbrowse.js đang cùng khai báo
+ * `textCell` — hai bản cài đặt tình cờ giống nhau nên chưa gây hại, nhưng sửa một
+ * bên là bên kia âm thầm đổi theo.
+ *
+ * Quy ước từ nay: file JS nào cũng đóng kín, thứ cần chia sẻ thì gán tường minh vào
+ * `window.` — thấy được ngay ai xuất cái gì. Xem `window.showToast` ở cuối file.
+ */
+(function () {
+
 const FEED_LIMIT = 15;
 
 let systemStatus = { isElevated: false, writablePrefix: "WinSentinel" };
@@ -821,4 +836,11 @@ window.onTabShown.subscribe((tab) => {
 
 window.eventBus.subscribe(onRealtimeEvent);
 
+// Xuất tường minh: logexport.js và logsbrowse.js đều báo kết quả qua thẻ #toast này.
+// CHỈ có một thẻ #toast trên trang, nên đây là loại thông báo "một dòng, thay thế
+// nhau" — cảnh báo bảo mật cần xếp chồng thì dùng #alert-stack của alerts.js.
+window.showToast = showToast;
+
 loadSystemStatus();
+
+})();

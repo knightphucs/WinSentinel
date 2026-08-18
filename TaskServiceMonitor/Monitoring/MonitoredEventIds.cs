@@ -32,7 +32,32 @@ public static class MonitoredEventIds
         7045, // service installed (System)
         7040, // start type changed
         7036, // state changed
-        7034  // service crashed unexpectedly
+        7034, // service crashed unexpectedly
+
+        // --- Nhom "service dung bat thuong", them o buoc 11 ---
+        // Mentor yeu cau bat "Service Crash / Dung dot ngot", nhung 7034 CHUA BAO GIO
+        // phat tren may dev (da xac minh: SCM o day chi ghi 7023/7026/7030/7031/7040/
+        // 7043/7045). Chi dung dung 7034/7036 thi muc do cua mentor se vinh vien trong.
+        // 7031 la ID may dev THUC SU co phat - xem docs/hanh-vi-mapping.md muc 3.2.
+        7031, // terminated unexpectedly (kem so lan loi + hanh dong khoi phuc)
+        7024, // terminated voi ma loi rieng cua service
+        7000, // khong khoi dong duoc
+        7009  // qua thoi gian cho khi ket noi toi service
+    ];
+
+    /// <summary>
+    /// Registry — channel <c>Security</c>. Đây là đường DUY NHẤT có log Windows thật
+    /// cho hai hành vi mentor nêu mà SCM <b>không phát event nào</b>: đổi
+    /// <c>binPath</c> và đổi tài khoản khởi chạy service (event 7040 chỉ báo start
+    /// type). Xem docs/hanh-vi-mapping.md mục 3.1.
+    ///
+    /// Cần bật thêm audit policy <c>"Registry"</c> VÀ đặt SACL trên khoá
+    /// <c>HKLM\SYSTEM\CurrentControlSet\Services</c>. Khối lượng event được khống chế
+    /// bằng chính phạm vi SACL, không phải bằng lọc phía app.
+    /// </summary>
+    public static readonly int[] RegistryEventIds =
+    [
+        4657 // registry value modified
     ];
 
     /// <summary>
@@ -54,7 +79,7 @@ public static class MonitoredEventIds
 
     /// <summary>Hợp của các nhóm trên, dùng để dựng XPath filter.</summary>
     public static readonly int[] All =
-        [.. TaskEventIds, .. ServiceEventIds, .. TaskSchedulerOperationalEventIds];
+        [.. TaskEventIds, .. ServiceEventIds, .. RegistryEventIds, .. TaskSchedulerOperationalEventIds];
 
     /// <summary>
     /// Event ID cần theo dõi CHO TỪNG CHANNEL. Trước đây mọi channel subscribe dùng
@@ -68,8 +93,8 @@ public static class MonitoredEventIds
     public static readonly IReadOnlyDictionary<string, int[]> ByChannel =
         new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Security"] = [4697, 4698, 4699, 4700, 4701, 4702],
-            ["System"] = [7045, 7040, 7036, 7034],
+            ["Security"] = [4657, 4697, 4698, 4699, 4700, 4701, 4702],
+            ["System"] = [7045, 7040, 7036, 7034, 7031, 7024, 7000, 7009],
             ["Microsoft-Windows-TaskScheduler/Operational"] = TaskSchedulerOperationalEventIds,
         };
 
@@ -104,6 +129,14 @@ public static class MonitoredEventIds
         if (TaskEventIds.Contains(eventId)) return MonitoredObjectType.ScheduledTask;
         if (ServiceEventIds.Contains(eventId)) return MonitoredObjectType.Service;
         if (TaskSchedulerOperationalEventIds.Contains(eventId)) return MonitoredObjectType.ScheduledTask;
+
+        // 4657 la event registry CHUNG CHUNG, khong rieng cho service. Xep vao nhom
+        // Service vi theo huong dan cai dat (docs/hanh-vi-mapping.md muc 3.1) SACL chi
+        // duoc dat tren dung khoa HKLM\SYSTEM\CurrentControlSet\Services. Dat SACL rong
+        // hon thi nhan nay khong con chinh xac - rule trong RuleCatalog van loc lai theo
+        // '\Services\' nen khong sinh canh bao sai, chi rieng nhan ObjectType la rong tay.
+        if (RegistryEventIds.Contains(eventId)) return MonitoredObjectType.Service;
+
         return MonitoredObjectType.Unknown;
     }
 
@@ -120,6 +153,11 @@ public static class MonitoredEventIds
         7040 => "Service start type changed",
         7036 => "Service state changed",
         7034 => "Service crashed",
+        7031 => "Service terminated unexpectedly",
+        7024 => "Service terminated with error",
+        7000 => "Service failed to start",
+        7009 => "Service start timed out",
+        4657 => "Registry value modified",
 
         // Text tam thoi - chua co mau XML that de xac nhan y nghia chinh xac.
         // Se sua lai (neu can) o Phase 4 sau khi doc mau capture duoc.

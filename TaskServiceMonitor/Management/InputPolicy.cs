@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using TaskServiceMonitor.Detection;
 
 namespace TaskServiceMonitor.Management;
 
@@ -87,19 +88,18 @@ public sealed class InputPolicy
     /// Bóc phần đường dẫn exe ra khỏi dòng lệnh. <c>BinaryPath</c> của service là CẢ
     /// dòng lệnh (<c>"C:\x\a.exe" -flag</c>), không phải chỉ đường dẫn.
     /// </summary>
-    internal static string ExtractExecutablePath(string raw)
-    {
-        var text = raw.Trim();
-
-        if (text.StartsWith('"'))
-        {
-            var closing = text.IndexOf('"', 1);
-            return closing > 1 ? text[1..closing] : text[1..];
-        }
-
-        var space = text.IndexOf(' ');
-        return space > 0 ? text[..space] : text;
-    }
+    /// <remarks>
+    /// Uỷ quyền cho <see cref="ExecutablePathParser.ExtractExecutable"/> (bước 11) để
+    /// lớp whitelist này và tầng phát hiện bóc đường dẫn theo đúng một cách. Trước đó
+    /// hai bên có hai bản sao, sửa một bên là lệch.
+    ///
+    /// Chỉ dùng chung phần BÓC. Phần chuẩn hoá thì cố ý khác nhau: ở đây đường dẫn sắp
+    /// được chạy trên chính máy này nên bắt buộc <c>Path.GetFullPath</c> (bước 3 bên
+    /// dưới), còn tầng phát hiện xử lý đường dẫn đến từ máy khác nên không được phép
+    /// ghép với thư mục làm việc hiện tại.
+    /// </remarks>
+    internal static string ExtractExecutablePath(string raw) =>
+        ExecutablePathParser.ExtractExecutable(raw);
 
     /// <summary>
     /// Bắt buộc đường dẫn nằm trong whitelist. Bảy bước, THỨ TỰ QUAN TRỌNG — mỗi bước

@@ -120,6 +120,126 @@ public static class ManagementEndpoints
         });
     }
 
+    /// <summary>
+    /// GET /api/system/recovered — ĐÚNG những event nào đã được đọc bù sau khi app
+    /// khởi động lại (cơ chế cursor <c>EventRecordID</c> ở bước 7).
+    ///
+    /// Trước đây Log Summary chỉ hiện con số "↺ khôi phục N" mà không xem được N đó
+    /// gồm những gì. Endpoint này trả về chính danh sách đó.
+    ///
+    /// CỐ Ý không thêm cột <c>IsRecovered</c> vào bảng <c>Events</c> (không phải làm
+    /// migration): mỗi channel đã có sẵn hai mốc đủ để suy ra khoảng khôi phục —
+    /// <c>ResumeFromRecordId</c> (cursor = MAX(RecordId) đã lưu trong DB lúc khởi
+    /// động) và <c>CatchUpTargetRecordId</c> (RecordId mới nhất đang có trong log tại
+    /// đúng thời điểm đó). Mọi event nằm trong khoảng NỬA MỞ <c>(cursor, target]</c>
+    /// chính là phần sinh ra trong lúc app tắt và vừa được đọc bù — không thể lẫn với
+    /// dữ liệu cũ, vì theo định nghĩa cursor là số lớn nhất đã có trong DB.
+    ///
+    /// Hệ quả cần biết: khoảng này tính lại mỗi lần khởi động, nên trang Khôi phục
+    /// nói về PHIÊN CHẠY HIỆN TẠI, không phải lịch sử mọi lần khôi phục.
+    /// </summary>
+    private static async Task<IResult> GetRecovered(
+        MonitorDbContext db, ChannelStatusRegistry registry, int? take, CancellationToken ct)
+    {
+        var limit = Math.Clamp(take ?? 500, 1, 2000);
+
+        var channelRows = new List<RecoveredChannelDto>();
+        var events = new List<EventSummaryDto>();
+
+        // Tuan tu, KHONG Task.WhenAll: mot DbContext scoped khong chay song song duoc
+        // (cung bay da ghi o EventEndpoints.GetSummary).
+        foreach (var status in registry.All())
+        {
+            // Khong co cursor = lan chay dau tien tren channel nay (chua tung luu event
+            // nao) -> khong co gi de khoi phuc. Khong co target = doc duoc cursor nhung
+            // GetLogInformation that bai luc khoi dong, xem ResolveCursor.
+            if (status.ResumeFromRecordId is not long cursor ||
+                status.CatchUpTargetRecordId is not long target ||
+                target <= cursor)
+            {
+                channelRows.Add(new RecoveredChannelDto(
+                    status.Channel, status.ResumeFromRecordId, status.CatchUpTargetRecordId,
+                    status.CaughtUpCount, Recovered: 0, Shown: 0,
+                    DowntimeFromUtc: null, DowntimeToUtc: null, Note: Explain(status)));
+                continue;
+            }
+
+            var inRange = db.Events.AsNoTracking()
+                .Where(e => e.Channel == status.Channel && e.RecordId > cursor && e.RecordId <= target);
+
+            // Đếm RIÊNG chứ không lấy rows.Count: `take` cắt danh sách trả về, nên
+            // dùng độ dài danh sách làm số tổng thì mọi channel đọc bù nhiều hơn
+            // `take` sẽ báo đúng bằng `take` — sai lặng lẽ và rất khó nhận ra
+            // (`take=5` từng cho ra "recovered: 5" trong khi thực tế là 5.115).
+            var total = await inRange.CountAsync(ct);
+
+            var rows = await inRange
+                .OrderByDescending(e => e.RecordId)
+                .Take(limit)
+                .Select(EventSummaryDto.Projection)
+                .ToListAsync(ct);
+
+            // Event cuoi cung TRUOC khi mat ket noi = dau kia cua khoang thoi gian app
+            // "khong nhin thay gi". Ghep voi event khoi phuc dau tien thanh cua so
+            // downtime hien ngay tren trang - do moi la thu can doi chieu khi mat mang.
+            var lastBeforeOutage = await db.Events.AsNoTracking()
+                .Where(e => e.Channel == status.Channel && e.RecordId <= cursor)
+                .MaxAsync(e => (DateTime?)e.TimeCreated, ct);
+
+            // Moc "dau tien doc bu duoc" phai lay tu TOAN BO khoang, khong phai tu
+            // trang dang tra ve - `rows` da bi `take` cat con phan MOI NHAT.
+            var firstRecovered = total > 0
+                ? await inRange.MinAsync(e => (DateTime?)e.TimeCreated, ct)
+                : null;
+
+            events.AddRange(rows);
+
+            channelRows.Add(new RecoveredChannelDto(
+                status.Channel, status.ResumeFromRecordId, status.CatchUpTargetRecordId,
+                status.CaughtUpCount, total, rows.Count,
+                lastBeforeOutage, firstRecovered, Note: null));
+        }
+
+        return Results.Ok(new
+        {
+            sessionStartedUtc = registry.SessionStartedUtc,
+            totalRecovered = channelRows.Sum(row => row.Recovered),
+            channels = channelRows,
+            events = events.OrderByDescending(e => e.TimeCreated).ToList()
+        });
+    }
+
+    /// <summary>
+    /// Một dòng của bảng "mốc khôi phục theo channel".
+    ///
+    /// <paramref name="Recovered"/> là số THẬT trong khoảng khôi phục;
+    /// <paramref name="Shown"/> là số dòng thực sự trả về sau khi <c>take</c> cắt bớt.
+    /// Hai số này phải tách nhau — gộp lại thì trang sẽ báo thiếu mà không ai biết.
+    ///
+    /// <paramref name="CaughtUpCount"/> là số watcher ĐẾM ĐƯỢC trong phiên này, có thể
+    /// chênh nhẹ với <paramref name="Recovered"/> (số đã kịp ghi xuống CSDL) khi đang
+    /// đọc bù dở — đó là chênh lệch thật, không phải lỗi.
+    /// </summary>
+    private sealed record RecoveredChannelDto(
+        string Channel,
+        long? ResumeFromRecordId,
+        long? CatchUpTargetRecordId,
+        int CaughtUpCount,
+        int Recovered,
+        int Shown,
+        DateTime? DowntimeFromUtc,
+        DateTime? DowntimeToUtc,
+        string? Note);
+
+    /// <summary>Vì sao channel này không có gì để khôi phục — nói thẳng thay vì để dòng trống.</summary>
+    private static string Explain(ChannelStatus status) => status switch
+    {
+        { Subscribed: false } => "Chưa subscribe được channel này nên không có mốc nào để đọc bù.",
+        { ResumeFromRecordId: null } => "Lần đầu ghi nhận channel này — chưa có cursor cũ để so, không có gì để khôi phục.",
+        { CatchUpTargetRecordId: null } => "Có cursor nhưng không đọc được thông tin log lúc khởi động (thường do thiếu quyền) nên không xác định được mốc kết thúc đọc bù.",
+        _ => "Không có event mới nào sinh ra trong lúc app tắt."
+    };
+
     public static void MapManagementEndpoints(this WebApplication app)
     {
         app.MapGet("/api/system/status", (SafeNameGuard guard) => Results.Ok(new
@@ -137,6 +257,10 @@ public static class ManagementEndpoints
             Results.Ok(registry.All()));
 
         app.MapGet("/api/system/overview", GetOverview);
+
+        // Danh sach event da doc bu sau restart - phan "N" trong badge "khoi phuc N"
+        // cua Log Summary, nay xem duoc tung dong.
+        app.MapGet("/api/system/recovered", GetRecovered);
 
         // ------------------------------------------------------------ Tasks
         app.MapGet("/api/tasks", (TaskManager tasks) => Run(() => Results.Ok(tasks.List())));

@@ -23,10 +23,10 @@ async function exportChannelLog(channel, eventId) {
       ? ""
       : " — không nhúng được mô tả, mở trên máy khác sẽ thiếu Description.";
 
-    showToast(`Đã lưu "${payload.fileName}" (${kb} KB).${note}`, payload.messagesEmbedded);
+    window.showToast(`Đã lưu "${payload.fileName}" (${kb} KB).${note}`, payload.messagesEmbedded);
     window.refreshSavedLogs?.();
   } catch (err) {
-    showToast("Không lưu được log: " + err.message, false);
+    window.showToast("Không lưu được log: " + err.message, false);
   }
 }
 
@@ -38,7 +38,7 @@ async function exportSelectedEvents({ channel, savedFile, tbody, format }) {
   const recordIds = window.selectedRecordIds(tbody);
 
   if (recordIds.length === 0) {
-    showToast("Chưa chọn dòng nào — bấm vào một dòng, Ctrl+click để chọn thêm.", false);
+    window.showToast("Chưa chọn dòng nào — bấm vào một dòng, Ctrl+click để chọn thêm.", false);
     return;
   }
 
@@ -58,7 +58,7 @@ async function exportSelectedEvents({ channel, savedFile, tbody, format }) {
 
     if (format === "evtx") {
       const payload = await res.json();
-      showToast(`Đã lưu ${recordIds.length} event vào "${payload.fileName}".`, true);
+      window.showToast(`Đã lưu ${recordIds.length} event vào "${payload.fileName}".`, true);
       window.refreshSavedLogs?.();
       return;
     }
@@ -75,9 +75,9 @@ async function exportSelectedEvents({ channel, savedFile, tbody, format }) {
     a.remove();
     URL.revokeObjectURL(url);
 
-    showToast(`Đã tải ${recordIds.length} event dạng ${format.toUpperCase()}.`, true);
+    window.showToast(`Đã tải ${recordIds.length} event dạng ${format.toUpperCase()}.`, true);
   } catch (err) {
-    showToast("Không lưu được event đã chọn: " + err.message, false);
+    window.showToast("Không lưu được event đã chọn: " + err.message, false);
   }
 }
 

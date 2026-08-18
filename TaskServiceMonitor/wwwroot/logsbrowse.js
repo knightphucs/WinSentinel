@@ -4,6 +4,10 @@
 // realtime, khong luu DB), tach han khoi pipeline curated (xem AdHocLogReader.cs).
 // Payload da kem san rawXml nen khung chi tiet khong can loadDetail.
 
+// ⚠️ Bọc IIFE - lý do đầy đủ ghi ở đầu manage.js (file này và manage.js cùng khai
+// báo `textCell`). Thứ duy nhất cần lộ ra ngoài là window.refreshSavedLogs ở dưới.
+(function () {
+
 const lb = {
   search: document.getElementById("logs-browse-search"),
   mode: document.getElementById("logs-browse-mode"),
@@ -144,7 +148,10 @@ function buildLogRow(evt) {
   // DB/bao SignalR nhu pipeline curated.
   tr.appendChild(riskCell(evt.riskLevel));
   tr.appendChild(textCell(evt.levelDisplayName));
-  tr.appendChild(textCell(new Date(evt.timeCreated).toLocaleString("vi-VN")));
+  // window.timeCell (app.js) de dong doc bu sau restart cung co badge "↺ doc bu"
+  // giong 4 panel kia. Truyen chuoi rieng vi cho nay in NGAY GIO DAY DU, khac ban
+  // rut gon cua Dashboard - badge la thu dung chung, dinh dang thi khong.
+  tr.appendChild(window.timeCell(evt, new Date(evt.timeCreated).toLocaleString("vi-VN")));
   tr.appendChild(textCell(evt.providerName));
   tr.appendChild(textCell(evt.eventId));
   tr.appendChild(textCell(evt.taskCategoryName ?? evt.taskCategoryId));
@@ -184,6 +191,11 @@ async function loadEvents() {
   params.set(currentSource.kind === "file" ? "savedFile" : "channel", currentSource.name);
   if (eventId) params.set("eventId", eventId);
   if (count) params.set("count", count);
+
+  // Loc thoi gian gui LEN SERVER (nhung vao XPath) chu khong cat tren mang tra ve:
+  // reader doc `count` event moi nhat roi dung, nen loc phia client se khong bao gio
+  // cham toi duoc event cu hon pham vi do.
+  timeRange.applyTo(params);
 
   lb.load.disabled = true;
   lb.body.replaceChildren();
@@ -263,6 +275,12 @@ function syncCurrentSource() {
 
 // Khong can tu goi syncCurrentSource() o day - loadEvents() da tu goi no dau
 // tien (doc dung "Nguon" dang chon o dropdown), goi lai o day la thua.
+// Doi khoang thoi gian = doi vung log can doc -> goi lai API ngay, khong doi bam
+// "Tai lai" (khac o Event ID vi cai do chi thu hep ket qua trong cung mot vung).
+const timeRange = window.createTimeRange("logs-browse-time", () => {
+  if (currentSource.name) loadEvents();
+});
+
 lb.load.addEventListener("click", loadEvents);
 
 lb.mode.addEventListener("change", () => {
@@ -313,10 +331,10 @@ async function exportCurrentChannel() {
       ? ""
       : " — không nhúng được mô tả, mở trên máy khác sẽ thiếu Description.";
 
-    showToast(`Đã lưu "${payload.fileName}" (${kb} KB).${note}`, payload.messagesEmbedded);
+    window.showToast(`Đã lưu "${payload.fileName}" (${kb} KB).${note}`, payload.messagesEmbedded);
     loadSavedLogs();
   } catch (err) {
-    showToast("Không lưu được log: " + err.message, false);
+    window.showToast("Không lưu được log: " + err.message, false);
   } finally {
     // KHONG hardcode "= false": neu nguoi dung da doi sang "Nguon: File da luu"
     // trong luc dang xuat (async), nut nay phai VAN o trang thai disabled dung
@@ -404,10 +422,10 @@ function buildSavedLogRow(file) {
       const payload = await res.json().catch(() => null);
       if (!res.ok) throw new Error(payload?.error ?? `HTTP ${res.status}`);
 
-      showToast(`Đã xoá "${file.fileName}".`, true);
+      window.showToast(`Đã xoá "${file.fileName}".`, true);
       loadSavedLogs();
     } catch (err) {
-      showToast("Không xoá được: " + err.message, false);
+      window.showToast("Không xoá được: " + err.message, false);
     }
   });
 
@@ -501,14 +519,16 @@ lb.pin.addEventListener("click", () => {
 
   const pinned = readPinnedChannels();
   if (pinned.includes(channel)) {
-    showToast(`Channel "${channel}" đã ghim rồi.`, false);
+    window.showToast(`Channel "${channel}" đã ghim rồi.`, false);
     return;
   }
 
   pinned.push(channel);
   writePinnedChannels(pinned);
   renderPinnedChannels();
-  showToast(`Đã ghim "${channel}" vào sidebar.`, true);
+  window.showToast(`Đã ghim "${channel}" vào sidebar.`, true);
 });
 
 renderPinnedChannels();
+
+})();

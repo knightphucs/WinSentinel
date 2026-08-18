@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TaskServiceMonitor.Api;
 using TaskServiceMonitor.Configuration;
 using TaskServiceMonitor.Data;
+using TaskServiceMonitor.Detection;
 using TaskServiceMonitor.Management;
 using TaskServiceMonitor.Monitoring;
 using TaskServiceMonitor.Realtime;
@@ -19,6 +20,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<EventLogOptions>(
     builder.Configuration.GetSection(EventLogOptions.SectionName));
+
+builder.Services.Configure<AlertingOptions>(
+    builder.Configuration.GetSection(AlertingOptions.SectionName));
 
 // Tra enum ra JSON dang chu ("Service") thay vi so (2). Dashboard doc de hon va
 // khong bi vo khi thu tu gia tri trong enum thay doi.
@@ -37,6 +41,16 @@ var connectionString = builder.Configuration.GetConnectionString("MonitorDb")
 
 builder.Services.AddDbContext<MonitorDbContext>(o => o.UseNpgsql(connectionString));
 builder.Services.AddScoped<EventStorageService>();
+builder.Services.AddScoped<AlertStorageService>();
+
+// Tang phat hien (buoc 11). Scoped vi CorrelationRules can DbContext de tra lich su
+// event - xem docs/hanh-vi-mapping.md muc 4.
+var alertingOptions = builder.Configuration
+    .GetSection(AlertingOptions.SectionName).Get<AlertingOptions>() ?? new AlertingOptions();
+
+builder.Services.AddSingleton(alertingOptions);
+builder.Services.AddScoped<CorrelationRules>();
+builder.Services.AddScoped<AlertEvaluator>();
 
 // Ve doi enum sang chuoi: xem ghi chu o ConfigureHttpJsonOptions ben tren.
 builder.Services.AddSignalR().AddJsonProtocol(o =>
@@ -74,6 +88,10 @@ builder.Services.AddHostedService<EventWatcherService>();
 // Consumer: doc hang doi -> ghi DB.
 builder.Services.AddHostedService<EventPersistenceService>();
 
+// Poll cau hinh service de bat viec doi binPath / doi tai khoan - hai hanh vi ma SCM
+// KHONG phat event nao (7040 chi bao doi start type).
+builder.Services.AddHostedService<ServiceConfigWatcher>();
+
 var app = builder.Build();
 
 // Tinh lai cac cot dan xuat tu RawXml cho event da luu (RiskLevel + nhom Level/
@@ -87,6 +105,17 @@ if (args.Contains("--backfill") || args.Contains("--rescore"))
         scope.ServiceProvider.GetRequiredService<MonitorDbContext>(),
         scope.ServiceProvider.GetRequiredService<WindowsEventParser>(),
         scope.ServiceProvider.GetRequiredService<RiskScorer>());
+}
+
+// Cham lai toan bo rule tren event DA LUU de dung lai bang canh bao, roi thoat.
+// Cung la cach do ti le duong tinh gia: in so canh bao theo tung rule.
+//   dotnet run --project TaskServiceMonitor -- --rebuild-alerts
+if (args.Contains("--rebuild-alerts"))
+{
+    using var scope = app.Services.CreateScope();
+    return await AlertRebuildTool.RunAsync(
+        scope.ServiceProvider.GetRequiredService<MonitorDbContext>(),
+        scope.ServiceProvider.GetRequiredService<AlertEvaluator>());
 }
 
 // Dashboard tinh o wwwroot/. UseDefaultFiles phai dung TRUOC UseStaticFiles
@@ -103,6 +132,7 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.MapEventEndpoints();
+app.MapAlertEndpoints();
 app.MapManagementEndpoints();
 app.MapLogBrowseEndpoints();
 app.MapHub<MonitorHub>(MonitorHub.Route);

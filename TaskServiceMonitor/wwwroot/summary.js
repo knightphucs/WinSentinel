@@ -167,11 +167,15 @@ function resumeCursorCell(status) {
   td.appendChild(document.createTextNode(String(status.resumeFromRecordId)));
 
   if (status.caughtUpCount > 0) {
-    const badge = document.createElement("span");
-    badge.className = "badge badge--info";
-    badge.style.marginLeft = "0.4rem";
-    badge.title = "So event nhan duoc thuoc phan doc bu luc khoi dong (recordId <= moc da co san khi subscribe)";
+    // <button> chu khong phai <span>: con so nay truoc day la ngo cut - biet la CO
+    // doc bu nhung khong xem duoc doc bu NHUNG GI. Nay bam vao mo tab "Khoi phuc",
+    // loc san dung channel nay.
+    const badge = document.createElement("button");
+    badge.type = "button";
+    badge.className = "badge badge--info badge--link";
+    badge.title = `Xem ${status.caughtUpCount} event đã đọc bù trên channel "${status.channel}"`;
     badge.textContent = `↺ khôi phục ${status.caughtUpCount}`;
+    badge.addEventListener("click", () => window.showRecovery(status.channel));
     td.appendChild(badge);
   }
 

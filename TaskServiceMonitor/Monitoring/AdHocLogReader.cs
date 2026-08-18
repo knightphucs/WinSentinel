@@ -87,9 +87,60 @@ public sealed class AdHocLogReader(
     /// </param>
     public Task<IReadOnlyList<WindowsMonitorEvent>> ReadAsync(
         string path, int? eventId, int count, CancellationToken ct,
-        PathType pathType = PathType.LogName)
+        PathType pathType = PathType.LogName,
+        DateTime? fromUtc = null, DateTime? toUtc = null)
         => ReadByXPathAsync(
-            path, eventId is int id ? $"*[System[(EventID={id})]]" : "*", count, ct, pathType);
+            path, BuildBrowseXPath(eventId, fromUtc, toUtc), count, ct, pathType);
+
+    /// <summary>
+    /// Dựng XPath cho "duyệt log": lọc theo Event ID và/hoặc khoảng thời gian.
+    /// Hàm THUẦN, không đụng Windows — tách ra để test được trên mọi máy.
+    /// </summary>
+    /// <remarks>
+    /// Vì sao phải lọc thời gian ở SERVER chứ không cắt trên mảng đã trả về: reader
+    /// đọc <c>count</c> event MỚI NHẤT rồi dừng. Lọc phía client thì "24 giờ qua" thực
+    /// chất là "trong 50 dòng mới nhất, dòng nào thuộc 24 giờ qua" — với channel bận
+    /// thì 50 dòng mới nhất có khi chỉ trải trong vài phút, và những gì cần tìm (ví dụ
+    /// event lúc app đang tắt) nằm ngoài tầm với, không cách nào chạm tới.
+    ///
+    /// Định dạng mốc thời gian trong XPath của Windows Event Log BẮT BUỘC là ISO-8601
+    /// UTC có hậu tố <c>Z</c> (<c>"o"</c> của .NET với <see cref="DateTimeKind.Utc"/>).
+    /// Truyền giờ local vào đây là lệch âm thầm, không có lỗi nào báo.
+    /// </remarks>
+    internal static string BuildBrowseXPath(int? eventId, DateTime? fromUtc, DateTime? toUtc)
+    {
+        var conditions = new List<string>();
+
+        if (eventId is int id)
+        {
+            conditions.Add($"(EventID={id})");
+        }
+
+        var time = new List<string>();
+
+        if (fromUtc is DateTime from)
+        {
+            time.Add($"@SystemTime>='{ToXPathStamp(from)}'");
+        }
+
+        if (toUtc is DateTime to)
+        {
+            time.Add($"@SystemTime<='{ToXPathStamp(to)}'");
+        }
+
+        if (time.Count > 0)
+        {
+            conditions.Add($"TimeCreated[{string.Join(" and ", time)}]");
+        }
+
+        return conditions.Count == 0
+            ? "*"
+            : $"*[System[{string.Join(" and ", conditions)}]]";
+    }
+
+    private static string ToXPathStamp(DateTime moment) =>
+        DateTime.SpecifyKind(moment, DateTimeKind.Utc)
+            .ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Đọc theo XPath tự dựng — dùng cho "lưu event đang chọn" (lọc theo

@@ -255,6 +255,271 @@ liệu WEF/WES của Microsoft, kèm phần giải thích "vì sao channel X ch�
   nới thành `public` chỉ để test.
 - **Xem [docs/log-id-demo.md](docs/log-id-demo.md)** cho kịch bản demo Log ID/Log Summary.
 
+## Bước 11 — Phân rã hành vi → Event ID và tầng Cảnh báo
+
+Mentor giao hai việc: (1) liệt kê các hành vi cần phân tích và phân rã ra Event ID
+nào, (2) gom log đó lại và **alert lên webapp**. **Đọc
+[docs/hanh-vi-mapping.md](docs/hanh-vi-mapping.md)** — đó là câu trả lời cho ý (1)
+và là bảng đối chiếu chuẩn cho toàn bộ danh mục rule.
+
+### Ba hành vi mentor nêu mà Windows KHÔNG phát event nào
+
+Phát hiện quan trọng nhất của bước này, **đừng đi tìm lại Event ID cho chúng**:
+
+- **Đổi `binPath` / đổi tài khoản chạy service**: SCM không ghi event. `7040` **chỉ**
+  báo đổi start type (4 field `param1..param4`, không có đường dẫn lẫn tài khoản).
+  Lấp bằng **hai đường độc lập**: `4657` (audit registry, cần SACL trên
+  `HKLM\SYSTEM\CurrentControlSet\Services`) và `ServiceConfigWatcher` (poll +
+  diff snapshot bằng `QueryServiceConfig`).
+- **Service crash**: `7034` **chưa từng phát** trên máy dev, `7036` cũng vậy. Đã thêm
+  `7031` (máy dev CÓ phát), `7024`, `7000`, `7009`.
+
+### Kiến trúc
+
+- `Detection/SuspiciousIndicators.cs` — **nguồn sự thật DUY NHẤT** về thư mục ghi
+  được / LOLBin / cờ PowerShell / principal quyền cao. Trước đây kiến thức này nằm
+  trong hai mảng private của `RiskScorer`.
+- `Detection/RuleCatalog.cs` — 15 rule thuần hàm trên MỘT event. Đối chiếu 1-1 với
+  bảng ở `docs/hanh-vi-mapping.md` mục 4.2 — **sửa ở đây thì sửa cả tài liệu đó**.
+- `Detection/CorrelationRules.cs` — rule cần tra DB nhiều event
+  (`TASK_COMMAND_CHANGED`, `TASK_CREATE_THEN_DELETE`). Đây chính là phần "phân tích
+  tương quan hành vi" mentor nêu, trước đây ghi là hoãn.
+- **`RiskScorer` nay CHỈ là lớp mỏng uỷ quyền** cho `RuleCatalog.HighestSeverity`.
+  Không còn giữ rule riêng. Lý do: để hai bộ rule song song thì sớm muộn dashboard
+  tô màu một đằng, tab Cảnh báo nói một nẻo.
+- `Severity` của `Alert` **dùng lại `RiskLevel`**, không tạo enum thứ hai — CSS
+  (`.risk--High/Medium/Low`), bộ lọc, biểu đồ đã bám theo nó rồi.
+- Một event có thể sinh **nhiều** cảnh báo → bảng `Alerts` riêng, không phải thêm cột.
+
+### Những chỗ dễ làm sai
+
+- **`Severity` lưu thành CHUỖI** (`HasConversion<string>`), nên **không được viết
+  `a.Severity >= minimum`** trong truy vấn EF: nó dịch thành so chuỗi theo bảng chữ
+  cái, mà `'High' >= 'Medium'` là FALSE → lọc "Medium trở lên" âm thầm nuốt mất đúng
+  nhóm High. Dùng `AlertEndpoints.SeverityAtLeast()` → `IN ('Medium','High')`.
+- **`ExecutablePathParser` CỐ Ý không gọi `Path.GetFullPath`**, khác hẳn
+  `InputPolicy`: đường dẫn ở đây đến từ event log của **máy khác**, file có thể không
+  tồn tại trên máy chạy app, và `GetFullPath` sẽ ghép đường dẫn tương đối với thư mục
+  làm việc hiện tại. `InputPolicy` thì ngược lại — nó xét đường dẫn **sắp chạy trên
+  chính máy này** nên bắt buộc phải chuẩn hoá tuyệt đối. Hai lớp dùng chung phần
+  **bóc** exe (`ExtractExecutable`), không dùng chung phần chuẩn hoá.
+- `ImagePath` có 3 dạng thật phải xử lý: có nháy + tham số, tiền tố `\??\`, và
+  `\SystemRoot\`. So chuỗi thô là vừa sót vừa báo nhầm.
+- **`ServiceConfigWatcher` lần chạy đầu CHỈ lập baseline**, không sinh cảnh báo — bỏ
+  bước này là ~200 cảnh báo giả ngay lần bật đầu tiên. Snapshot lưu DB để restart
+  không mất mốc (cùng tinh thần cursor `RecordId` ở bước 7).
+- `AlertEvaluator` gọi **bên trong nhánh `if (await storage.SaveAsync(evt))`** của
+  `EventPersistenceService` — chỗ duy nhất biết chắc event là MỚI (đã qua dedupe),
+  nên có ngữ nghĩa exactly-once miễn phí.
+- Rule mức **Low = "ghi nhận hành vi"** (tạo task, cài service). Mentor CÓ liệt kê
+  chúng nên phải sinh cảnh báo, nhưng không đẩy `RiskLevel` của event lên và tab Cảnh
+  báo mặc định lọc từ Medium — nếu không dashboard ngập màu.
+- **Banner cảnh báo KHÔNG dùng lại `showToast` của `manage.js`**: chỗ đó chỉ có một
+  thẻ `#toast`, gọi cái thứ hai là đè cái thứ nhất và timer 6 giây của lần trước vẫn
+  tắt nhầm cái mới. Một event sinh nhiều cảnh báo cùng lúc nên phải xếp chồng được →
+  `#alert-stack` riêng trong `alerts.js`.
+- `window.alertBus` tách hẳn khỏi `window.eventBus` — kết nối SignalR nằm trong
+  `connectRealtime()` của `app.js` nên `alerts.js` không với tới được.
+
+### Tinh chỉnh dựa trên dữ liệu thật (không chốt bằng cảm tính)
+
+- **`SERVICE_STARTTYPE_CHANGED` giữ Medium kể cả khi đổi sang auto start.** Thiết kế
+  ban đầu định nâng High, nhưng mẫu `7040` thật duy nhất trên máy dev là **BITS đi
+  `demand start` → `auto start`** — hành vi bình thường và lặp rất thường xuyên.
+  Chấm High là tự làm ngập tab Cảnh báo.
+- `rundll32.exe` / `msiexec.exe` trong danh sách LOLBin là **nguồn dương tính giả
+  điển hình**. Phải chạy `--rebuild-alerts` trên dữ liệu thật, đếm theo từng rule rồi
+  mới chốt danh sách.
+- Test `RuleCatalogTests.MauThat_KhongSinhCanhBaoHigh` chạy trên **cả 14 fixture
+  thật** — nới rule đến mức gây dương tính giả thì test đổ. Đây là test quan trọng
+  nhất của tầng phát hiện.
+
+### Lệnh CLI mới
+
+`dotnet run --project TaskServiceMonitor -- --rebuild-alerts` — chấm lại toàn bộ rule
+trên event đã lưu, in số cảnh báo **theo từng rule** (đó là cách đo dương tính giả).
+Chạy lại bao nhiêu lần cũng không nhân đôi nhờ unique index `IX_Alerts_Dedup` trên
+`(SourceEventId, RuleId)`.
+
+## Bước 12 — Chuông thông báo, trang Khôi phục, lọc khoảng thời gian
+
+### ⚠️ QUY ƯỚC MỚI, ÁP CHO MỌI FILE JS: bọc IIFE, xuất tường minh qua `window.`
+
+`wwwroot/*.js` là `<script>` **thường**, không phải module — mọi khai báo top-level
+rơi vào **chung một global scope**. File nạp sau **ghi đè lặng lẽ** lên hàm cùng tên
+của file nạp trước: không lỗi, không cảnh báo, chỉ là chạy nhầm hàm.
+
+Đã trả giá một lần: `alerts.js` khai báo `render`/`buildRow`/`cell` ở top-level, nạp
+sau `app.js` nên `loadInitial()` của app.js gọi phải `render()` của bảng Cảnh báo →
+**bảng Dashboard trống trơn, card "Máy đang gửi event" đứng ở 0, mảng `events` vẫn có
+đủ 200 phần tử và console KHÔNG hề có lỗi nào**. Phải render trang bằng trình duyệt
+thật rồi đo từng bước bên trong `loadInitial` mới lộ ra.
+
+Nay `alerts.js`, `manage.js`, `logsbrowse.js`, `timerange.js`, `notifications.js`,
+`recovery.js` đều đóng kín. Thứ cần chia sẻ gán tường minh:
+`window.showToast` (manage.js), `window.refreshSavedLogs` (logsbrowse.js),
+`window.createTimeRange`, `window.pushNotification`, `window.showRecovery`.
+
+Va chạm còn sót lại lúc rà: `textCell` khai báo ở **cả** `manage.js` lẫn
+`logsbrowse.js` — hai bản cài đặt tình cờ giống hệt nhau nên chưa gây hại, nhưng sửa
+một bên là bên kia âm thầm đổi theo. Đã bọc IIFE cả hai, `window.textCell` nay
+**không tồn tại** (kiểm tra bằng cách này khi nghi ngờ).
+
+Cách rà: liệt kê khai báo ở **depth 0** của từng file rồi tìm tên trùng. Đếm theo
+dòng đơn thuần sẽ **báo nhầm** vì không phân biệt được khai báo bên trong IIFE.
+
+### Ba tầng "có gì mới" — ĐỪNG gộp lại
+
+| | Đếm cái gì | Lưu ở đâu | Ai đọc |
+|---|---|---|---|
+| Badge tab **Cảnh báo** | chưa **XỬ LÝ** | cột `Alerts.Acknowledged` trong DB | mọi máy, mọi phiên |
+| Badge chuông / tab **Thông báo** | chưa **ĐỌC** | một mốc thời gian trong `localStorage` | riêng trình duyệt này |
+| Banner `#alert-stack` | vừa nổ ra | không lưu, 10 giây tự tắt | phiên hiện tại |
+
+Một cảnh báo đã đọc vẫn đang chờ xử lý — hai trạng thái không thay thế nhau, hai con
+số **nên** lệch nhau.
+
+- **"Đã đọc" lưu bằng MỘT mốc thời gian, không phải danh sách id**: danh sách id phình
+  vô hạn theo số cảnh báo (DB đang có hàng chục nghìn sau `--rebuild-alerts`), còn một
+  mốc đủ trả lời đúng câu hỏi "cái này có mới hơn lần cuối tôi xem không".
+- **Lần đầu vào app, mốc đặt là "bây giờ"**, không phải 0 — nếu không thì toàn bộ lịch
+  sử cảnh báo hiện là chưa đọc ngay lần mở đầu tiên, chuông báo 99+ mà chẳng có gì thật
+  sự mới.
+- `markAllRead` lấy mốc từ **thông báo mới nhất** nếu nó ở tương lai, không phải
+  `Date.now()`: đồng hồ máy nguồn chạy nhanh hơn thì bấm xong badge không về 0, trông
+  như nút hỏng.
+- Chuông **chỉ nhận Medium trở lên**, cùng ngưỡng với tab Cảnh báo. Rule mức Low là
+  "ghi nhận hành vi" (tạo task, cài service) — đẩy hết lên chuông thì chuông kêu suốt.
+- Thông báo **không chỉ có cảnh báo**: việc app đọc bù event sau restart cũng vào đây,
+  mà nó chẳng phải hành vi đáng ngờ nào cả.
+
+### Trang Khôi phục — `GET /api/system/recovered`
+
+Bước 7 mới chỉ hiện badge "↺ khôi phục N" ở Log Summary: biết là **có** đọc bù nhưng
+không biết đọc bù được **những gì**. Nay badge đó là `<button>`, bấm vào mở tab Khôi
+phục và lọc sẵn đúng channel.
+
+- **KHÔNG thêm cột `IsRecovered` vào bảng `Events`** (không phải làm migration). Mỗi
+  channel đã có sẵn hai mốc đủ để suy ra: `ResumeFromRecordId` (cursor = `MAX(RecordId)`
+  đã lưu lúc khởi động) và `CatchUpTargetRecordId` (RecordId mới nhất đang có trong log
+  tại đúng thời điểm đó). Mọi event trong khoảng nửa mở **`(cursor, target]`** chính là
+  phần sinh ra lúc app tắt — không thể lẫn với dữ liệu cũ, vì **theo định nghĩa** cursor
+  là số lớn nhất đã có trong DB.
+- Hệ quả phải nói rõ trên UI: hai mốc tính lại **mỗi lần khởi động**, nên trang này nói
+  về **phiên chạy hiện tại**, không phải lịch sử mọi lần khôi phục.
+- Trang còn hiện **cửa sổ "app không nhìn thấy gì"**: từ event cuối cùng trước khi mất
+  kết nối (`MAX(TimeCreated)` với `RecordId <= cursor`) đến event khôi phục đầu tiên.
+  Đó mới là thứ cần đối chiếu khi mất mạng.
+- 🪤 **Lỗi đã dính khi viết**: ban đầu lấy `rows.Count` làm số tổng, mà `rows` đã bị
+  `take` cắt → `take=5` báo "recovered: 5" trong khi thực tế là **5.115**. Phải
+  `CountAsync` **riêng**, và trả thêm `shown` để trang tự biết mình đang hiện thiếu.
+  Cùng lý do, `downtimeToUtc` phải `MinAsync` trên **toàn khoảng**, không lấy từ trang
+  đang trả về (trang đó là phần **mới nhất**).
+- `caughtUpCount` (watcher đếm được trong phiên) và `recovered` (số đã kịp ghi xuống DB)
+  **chênh nhau là bình thường** khi đang đọc bù dở — trang hiện cả hai thay vì giấu một.
+- `ChannelStatusRegistry.SessionStartedUtc` dùng thay `Process.StartTime` (giờ local, và
+  lệch khi chạy qua `dotnet run`).
+
+### Badge "↺ đọc bù" trên từng dòng — `wwwroot/recoverymark.js`
+
+Trang Khôi phục trả lời "app đã đọc bù được những gì" khi bạn **chủ động** vào xem.
+Badge này trả lời câu ngược lại ngay tại chỗ đang đọc: "dòng tôi đang nhìn có phải thứ
+vừa được vá lại không?" — cần thiết vì event đọc bù nằm **lẫn** giữa event realtime
+theo đúng thứ tự thời gian, nhìn bảng không tài nào phân biệt được.
+
+- Vẫn **không thêm cột nào vào DB**: chỉ cần `channel` + `recordId` của dòng (đã có sẵn
+  trong mọi payload) đem so với khoảng `(cursor, target]` của channel đó.
+- Badge gắn vào **ô "Thời gian"**, KHÔNG thêm cột mới: thêm cột sẽ làm lệch bề rộng đã
+  lưu ở localStorage của `colresize.js` **và** lệch chỉ số cột của bộ lọc theo header
+  (`leaf.columns[colIndex]`) ở cả 4 bảng log.
+- `recoverymark.js` là **chỗ DUY NHẤT** gọi `/api/system/recovered` cho phần tóm tắt;
+  `notifications.js` dùng lại qua `whenReady()` + `summary()`. Ba chỗ cùng hỏi một câu
+  mà mỗi chỗ tự fetch thì có ngày ba chỗ nói ba con số khác nhau lúc đang đọc bù dở.
+- Phải gọi lại `render()` trong `whenReady()`: bảng vẽ xong **trước** khi fetch này về,
+  không vẽ lại thì mở trang lên không thấy badge nào cho tới khi tình cờ có event mới.
+- Áp cho cả `logsbrowse.js` qua `window.timeCell(evt, text)` — tham số `text` để nơi đó
+  giữ định dạng ngày giờ đầy đủ của riêng nó; badge dùng chung, định dạng thì không.
+- Đã kiểm biên: `recordId == cursor` → **không** badge, `== target` → **có** badge
+  (khoảng nửa mở), `recordId` null hoặc khác channel → không badge.
+
+### Lọc thời gian ở 4 panel log — phải chạy Ở SERVER, nhúng vào XPath
+
+`AdHocLogReader` đọc `count` event **mới nhất** rồi dừng. Lọc thời gian phía client vì
+vậy chỉ là "trong 50 dòng mới nhất, dòng nào thuộc 24 giờ qua" — với channel bận thì 50
+dòng đó có khi chỉ trải trong vài phút, và thứ cần tìm (ví dụ event sinh ra lúc app
+đang tắt) **không cách nào chạm tới**. Nên `AdHocLogReader.BuildBrowseXPath` nhúng mốc
+thời gian thẳng vào XPath: `*[System[(EventID=X) and TimeCreated[@SystemTime>='…']]]`.
+
+- Mốc BẮT BUỘC là ISO-8601 UTC có hậu tố `Z`. Truyền giờ local vào là lệch âm thầm —
+  Windows **không báo lỗi**, chỉ trả về ít hơn. Có 6 test riêng
+  (`AdHocLogXPathTests`) vì đây là loại sai không thể phát hiện bằng mắt.
+- 3 panel curated có hai chế độ: "App đã bắt" lọc trên mảng `events` (không có request
+  nào để gửi `from`/`to`), "Toàn bộ channel" gửi lên server. `renderLogLeaves` áp bộ lọc
+  cho **cả hai** — thừa ở chế độ channel nhưng vô hại, và tránh một nhánh if dễ quên.
+- Đổi khoảng thời gian **gọi lại API ngay**, không đợi bấm "Tải lại" (khác ô Event ID):
+  nó quyết định đọc **vùng nào** của log, chứ không phải lọc lại vùng đã đọc.
+
+### Trang Khôi phục: xem cả channel app KHÔNG theo dõi
+
+Chỉ channel trong `EventLog:Channels` mới có cursor để đọc bù — thêm channel cho app
+*theo dõi* là sửa `appsettings.json` + khởi động lại. Nhưng để *xem* channel khác trong
+đúng khoảng mất kết nối thì không cần: ô "Log Name" có **hai optgroup**,
+`recovered:<channel>` lọc trên danh sách đã đọc bù, `live:<channel>` đọc thẳng qua
+`/api/logs/browse` với `from`/`to`. Banner vàng nói rõ dữ liệu đó **không** nằm trong
+CSDL và **không** được chấm cảnh báo — nếu không người xem sẽ tưởng app đang giám sát
+cả channel đó.
+
+- 🪤 **Field là `isEnabled`, KHÔNG phải `enabled`** (`LogChannelInfo`). Viết nhầm một
+  lần: `!undefined` là true nên **cả 1.321 channel** bị đánh dấu "TẮT" và disabled,
+  danh sách trống rỗng mà không có lỗi nào. Đối chiếu `logsbrowse.js` nếu còn nghi ngờ.
+- 🪤 **Cận trên của "khoảng mất kết nối" là event đọc bù MỚI NHẤT**, không phải cột
+  `downtimeToUtc` của bảng channel — cột đó là event đọc bù **đầu tiên** (mốc mở đầu
+  khoảng mù). Lấy nhầm thì cửa sổ co lại còn một khoảnh khắc và bấm nút xong danh sách
+  khôi phục về **0 dòng**. Cộng thêm 1 giây vì ô `datetime-local` chỉ nhận tới giây.
+- `timeRange.set()` phải tự ghép chuỗi giờ **máy**, không dùng `toISOString().slice()`
+  — hàm đó trả giờ UTC, đổ vào ô nhập là hiện lệch đúng 7 tiếng.
+
+### Kéo-resize cột: chỉ gọi được khi panel ĐÃ hiện
+
+`makeColumnsResizable` đọc `getBoundingClientRect().width`, mà phần tử đang `hidden` trả
+về **0**. Nên phải gọi trong `onTabShown`, không gọi lúc nạp file. Nay đã có cho
+Thông báo, Khôi phục (2 bảng) và Cảnh báo (2 bảng); hàm tự chống gọi lặp bằng
+`dataset.resizableInit`.
+
+### 🪤 Bẫy flexbox ở header: NHIỀU item cùng `margin-left: auto`
+
+Đặt `margin-left: auto` cho **cả** `.bell-wrap` lẫn `.theme-toggle` → khoảng trống bị
+**chia đều** cho chúng chứ không phải item đầu tiên ăn hết, kết quả là chuông rơi ra
+**giữa header**. Chỉ một mình `.bell-wrap` giữ margin auto, `.bell-wrap + .theme-toggle`
+phải trả về 0.
+
+### Lọc khoảng thời gian — `wwwroot/timerange.js` + `from`/`to` ở API
+
+Một bộ điều khiển dùng chung cho 4 panel (Dashboard, Cảnh báo, Thông báo, Khôi phục),
+quy ước id: `#<prefix>-preset`, `#<prefix>-custom`, `#<prefix>-from`, `#<prefix>-to`.
+
+- **Lọc ở SERVER, không lọc mảng đã tải** với Dashboard và Cảnh báo: client chỉ giữ 200
+  event / 300 cảnh báo mới nhất, nên lọc client cho khung "7 ngày" thực chất chỉ lọc
+  trong đúng chỗ đó — càng xa hiện tại càng sai. Đổi khoảng thời gian là **đổi câu hỏi**,
+  phải hỏi lại server.
+- **Vẫn phải lọc lại ở client** cho đường realtime: event/cảnh báo tới qua SignalR
+  **không đi qua** `/api/events` hay `/api/alerts`, nên đang xem cửa sổ quá khứ mà chèn
+  thẳng vào là sai hẳn khung đang xem.
+- 🪤 **BẪY MÚI GIỜ**: `<input type="datetime-local">` trả chuỗi **không mang múi giờ**.
+  Phải `new Date(chuỗi).toISOString()` (hiểu là giờ máy → đổi sang UTC). **Không được**
+  nối thêm `"Z"` rồi gửi thẳng — làm vậy là khai giờ Việt Nam thành giờ UTC, lệch đúng
+  7 tiếng, im lặng, không lỗi. Phía server `TimeRangeFilter` dùng
+  `AdjustToUniversal | AssumeUniversal` cho cùng một lý do.
+- **Lọc theo `EventTime`, KHÔNG phải `DetectedAt`** với cảnh báo: hai mốc lệch hẳn nhau
+  khi đọc bù sau restart hoặc chạy `--rebuild-alerts` (hành vi lúc 2 giờ sáng có thể
+  mang `DetectedAt` là 9 giờ sáng hôm sau). Người dùng lọc "hôm qua" là hỏi về lúc hành
+  vi **xảy ra**.
+- `POST /api/alerts/acknowledge-all` **phải nhận đủ bộ tham số lọc kể cả `from`/`to`**:
+  nút nằm ngay cạnh bộ lọc nên người dùng hiểu là "hết những gì đang thấy". Thiếu một
+  tham số là âm thầm đánh dấu cả phần ngoài màn hình — thao tác **không hoàn tác được**.
+- `.rules-panel` phải có **cả** `margin-bottom`: `.table-wrap` ngay dưới không có
+  `margin-top` riêng, thiếu là hai khối viền dính sát nhau, trông như một bảng bị vỡ đôi.
+
 ## Ghi chú kiến trúc bước 4-5
 
 - **Broadcast SignalR nằm ở `EventPersistenceService`, KHÔNG phải
@@ -279,6 +544,7 @@ liệu WEF/WES của Microsoft, kèm phần giải thích "vì sao channel X ch�
 |---|---|
 | `dotnet run --project TaskServiceMonitor -- --parse-samples` | Chạy parser trên `samples/`, in kết quả — không cần DB |
 | `dotnet run --project TaskServiceMonitor -- --rescore` | Chấm lại `RiskLevel` cho toàn bộ event đã lưu |
+| `dotnet run --project TaskServiceMonitor -- --rebuild-alerts` | Chấm lại toàn bộ rule → dựng bảng `Alerts`, in số theo từng rule (đo dương tính giả) |
 
 ## Thiết lập môi trường đã có sẵn trên máy dev
 
@@ -405,12 +671,11 @@ Các bẫy đã dính khi viết parser (17 mẫu thật trong `TaskServiceMonit
 
 ## Hướng mentor giao tiếp theo (CHƯA làm, cố ý hoãn)
 
-- **Phân tích tương quan hành vi**: ví dụ phát hiện "task vừa tạo đã bị xoá ngay",
-  tức là nhìn *chuỗi* event chứ không chỉ từng event rời rạc. `RiskScorer` hiện chấm
-  điểm từng event độc lập — muốn làm tương quan thì cần một tầng riêng đọc lại nhiều
-  event gần nhau theo `ObjectName` + cửa sổ thời gian.
-- **Signature virus** — mentor sẽ giao nghiên cứu sau.
-- Không đoán trước cấu trúc cho hai phần này; chờ mentor chốt phạm vi.
+- ~~**Phân tích tương quan hành vi**~~ ✅ **đã làm ở bước 11** —
+  `Detection/CorrelationRules.cs` (`TASK_COMMAND_CHANGED`, `TASK_CREATE_THEN_DELETE`,
+  điều kiện nâng cấp của `SERVICE_CRASH`).
+- **Signature virus** — mentor sẽ giao nghiên cứu sau. Không đoán trước cấu trúc;
+  chờ mentor chốt phạm vi.
 
 ## Gaps / cần xác minh trước khi code phần liên quan
 
@@ -420,9 +685,13 @@ Các bẫy đã dính khi viết parser (17 mẫu thật trong `TaskServiceMonit
   Hai ID này rơi vào nhánh dự phòng của parser (vẫn ra event hợp lệ, chỉ thiếu
   field chi tiết). **Không đoán cấu trúc** — chờ có mẫu thật rồi mới viết nhánh
   riêng. Xem `WindowsEventParser.RecognizedEventIds` để biết ID nào đã xử lý.
-- **Cân nhắc bổ sung 7031** (service terminated unexpectedly) — máy dev CÓ event
-  này, trong khi 7034 thì không. Nếu mục tiêu là bắt service crash thì 7031 khả
-  dụng hơn 7034. Chưa thêm vì nằm ngoài danh sách mentor giao.
+- **7031/7024/7000/7009 và 4657 đã ĐƯỢC THEO DÕI (bước 11) nhưng CHƯA có nhánh
+  parse riêng** — mới nằm trong `MonitoredEventIds`, còn rơi vào nhánh dự phòng
+  (`IsRecognized = false`, dữ liệu thô vẫn nằm đủ trong `Data`). Rule `SERVICE_CRASH`
+  chỉ cần Event ID nên hoạt động ngay; rule `4657` đọc phòng thủ qua `Data` nên tên
+  field khác dự đoán thì chỉ đơn giản không khớp, không sinh dữ liệu sai.
+  **Việc còn lại: thu mẫu XML thật rồi mới viết nhánh parse** (cách ép sinh event ghi
+  ở `docs/hanh-vi-mapping.md` mục 3.2).
 - **4697 cần Audit Policy KHÁC 4698-4702**: 4698-4702 dùng subcategory
   `"Other Object Access Events"`, còn 4697 dùng `"Security System Extension"`.
   Bật thiếu một trong hai thì nhóm tương ứng sẽ không bao giờ xuất hiện.
@@ -461,6 +730,9 @@ Các bẫy đã dính khi viết parser (17 mẫu thật trong `TaskServiceMonit
 
 ## Quy ước code
 
+- **JS: mỗi file bọc trong IIFE, thứ cần chia sẻ gán tường minh vào `window.`** —
+  `<script>` thường dùng chung một global scope, file nạp sau ghi đè lặng lẽ lên hàm
+  cùng tên của file trước (xem "Bước 12" để biết lỗi thật đã gặp).
 - Model dùng C# `record` (immutable), không dùng class thường cho DTO.
 - Tên field của `WindowsMonitorEvent` bám theo spec mentor giao (`Id`, `Hostname`,
   `ActorAccount`, `ObjectType`, `ObjectName`, `ActionDescription`, `RawXml`),

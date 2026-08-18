@@ -21,6 +21,24 @@ window.eventBus = {
   },
 };
 
+/**
+ * Kenh phat CANH BAO (buoc 11). Tach hẳn khoi eventBus vi hai thu khac ban chat:
+ * event la dong nhat ky, canh bao la ket luan - va MOT event co the sinh ra NHIEU
+ * canh bao, nen khong the ghep chung vao mot luong.
+ *
+ * Ket noi SignalR nam trong connectRealtime() nen alerts.js khong voi toi duoc;
+ * dung bus nay lam cau, giong cach manage.js nghe eventBus.
+ */
+window.alertBus = {
+  handlers: [],
+  subscribe(fn) { this.handlers.push(fn); },
+  publish(alert) {
+    for (const fn of this.handlers) {
+      try { fn(alert); } catch (err) { console.error("Loi handler alert bus:", err); }
+    }
+  },
+};
+
 const el = {
   body: document.getElementById("events-body"),
   status: document.getElementById("status"),
@@ -71,6 +89,29 @@ function cell(text, className) {
   return td;
 }
 
+/**
+ * O "Thoi gian" - kem badge "↺ doc bu" khi dong nay la event duoc doc bu sau restart.
+ *
+ * Gan vao o thoi gian chu KHONG them mot cot rieng: them cot se lam lech be rong da
+ * luu o localStorage cua colresize.js va lech chi so cot cua bo loc theo header
+ * (leaf.columns[colIndex]) o ca 4 bang log. Badge cung dung cho o thoi gian ve mat y
+ * nghia - no noi "dong nay ve muon hon binh thuong".
+ *
+ * `text` cho phep ben goi giu nguyen dinh dang rieng cua minh (logsbrowse.js in ngay
+ * gio day du, khac formatTime rut gon cua Dashboard).
+ */
+function timeCell(evt, text) {
+  const td = cell(text ?? formatTime(evt.timeCreated), "col-time");
+
+  if (window.recoveryMarks?.isRecovered(evt)) {
+    td.appendChild(document.createTextNode(" "));
+    td.appendChild(window.recoveryMarks.badge());
+  }
+
+  return td;
+}
+window.timeCell = timeCell;
+
 function riskCell(risk) {
   const td = document.createElement("td");
   const badge = document.createElement("span");
@@ -86,7 +127,7 @@ function buildRow(evt, isNew) {
   tr.addEventListener("click", () => openDetail(evt));
 
   tr.appendChild(riskCell(evt.riskLevel));
-  tr.appendChild(cell(formatTime(evt.timeCreated), "col-time"));
+  tr.appendChild(timeCell(evt));
   tr.appendChild(cell(evt.hostname));
   tr.appendChild(cell(objectTypeLabel(evt.objectType)));
   tr.appendChild(cell(evt.objectName, "col-name"));
@@ -96,7 +137,16 @@ function buildRow(evt, isNew) {
   return tr;
 }
 
-/** Ba filter ket hop voi nhau bang AND. */
+/**
+ * Bo loc "khoang thoi gian" cua Dashboard. Khac 3 filter con lai o cho: no goi LAI
+ * API chu khong loc tren mang dang co. Ly do: client chi giu 200 event moi nhat, nen
+ * loc client cho khung "7 ngay" se ra dung nhung event moi nhat vua roi chu khong
+ * phai 7 ngay that - cang xa hien tai cang sai. Chon khoang thoi gian roi la doi
+ * cau hoi, phai hoi lai server.
+ */
+const dashboardTime = window.createTimeRange("dashboard-time", () => loadInitial());
+
+/** Bon filter ket hop voi nhau bang AND. */
 function passesFilter(evt) {
   const host = el.filterHost.value;
   const type = el.filterType.value;
@@ -104,7 +154,11 @@ function passesFilter(evt) {
   if (host && evt.hostname !== host) return false;
   if (type && evt.objectType !== type) return false;
   if (risk && evt.riskLevel !== risk) return false;
-  return true;
+
+  // Van phai loc lai o client du server da loc: event realtime toi qua SignalR
+  // KHONG di qua /api/events, nen dang xem cua so "hom qua" ma co event moi thi no
+  // se chen thang vao bang neu khong chan o day.
+  return dashboardTime.matches(evt.timeCreated);
 }
 
 function render(newestId) {
@@ -152,7 +206,7 @@ function securityDetail(evt) {
 const eventViewerColumns = [
   { label: "Rủi ro", value: (evt) => evt.riskLevel, render: (evt) => riskCell(evt.riskLevel) },
   { label: "Level", value: (evt) => evt.levelDisplayName, render: (evt) => cell(evt.levelDisplayName) },
-  { label: "Thời gian", value: null, render: (evt) => cell(formatTime(evt.timeCreated), "col-time") },
+  { label: "Thời gian", value: null, render: (evt) => timeCell(evt) },
   { label: "Source", value: (evt) => evt.providerName, render: (evt) => cell(evt.providerName) },
   { label: "Event ID", value: (evt) => String(evt.eventId), render: (evt) => cell(evt.eventId) },
   {
@@ -305,7 +359,10 @@ function renderLogLeaves(newestId) {
       // (query param), leaf.eventIdFilter chi duoc set o che do "captured" -
       // xem initLeafToolbars. Ap them o day de o do CO tac dung ca hai che do,
       // khong chi rieng "Toan bo channel" nhu truoc.
-      .filter((evt) => !leaf.eventIdFilter || String(evt.eventId) === leaf.eventIdFilter);
+      .filter((evt) => !leaf.eventIdFilter || String(evt.eventId) === leaf.eventIdFilter)
+      // Ap ca o che do "channel" (server da loc roi) lan "captured": o che do captured
+      // KHONG co request nao de gui from/to, nen day la cho duy nhat loc duoc.
+      .filter((evt) => !leaf.timeRange || leaf.timeRange.matches(evt.timeCreated));
 
     tbody.replaceChildren();
     for (const evt of visible) {
@@ -464,6 +521,12 @@ async function loadLeafChannel(prefix, leaf) {
   if (eventId) params.set("eventId", eventId);
   if (count) params.set("count", count);
 
+  // Loc thoi gian PHAI di kem request: AdHocLogReader doc `count` event MOI NHAT roi
+  // dung, nen cat tren mang tra ve chi la "trong 50 dong moi nhat, dong nao thuoc 24
+  // gio qua" - voi channel ban thi 50 dong do co khi chi trai vai phut, khong cach nao
+  // voi toi event cu (vi du phan sinh ra luc app dang tat).
+  leaf.timeRange?.applyTo(params);
+
   const emptyEl = document.getElementById(`${prefix}-empty`);
   if (emptyEl) {
     emptyEl.textContent = "Đang tải…";
@@ -490,6 +553,17 @@ function initLeafToolbars() {
     const mode = document.getElementById(`${prefix}-mode`);
     const search = document.getElementById(`${prefix}-search`);
     const reload = document.getElementById(`${prefix}-reload`);
+
+    // Doi khoang thoi gian = doi cau hoi -> o che do "channel" phai hoi lai server
+    // ngay (KHONG doi bam "Tai lai" nhu o Event ID), vi day la thu quyet dinh doc
+    // vung nao cua log chu khong phai loc lai vung da doc.
+    leaf.timeRange = window.createTimeRange(`${prefix}-time`, () => {
+      if (leafModes[prefix] === "channel") {
+        loadLeafChannel(prefix, leaf);
+      } else {
+        renderLogLeaves();
+      }
+    });
 
     mode?.addEventListener("change", () => {
       leafModes[prefix] = mode.value;
@@ -699,7 +773,10 @@ function addEvent(evt) {
 /** Nap san du lieu da co trong DB de mo trang ra la thay ngay, khong cho event moi. */
 async function loadInitial() {
   try {
-    const res = await fetch(`/api/events?take=${MAX_EVENTS}`);
+    const params = new URLSearchParams({ take: String(MAX_EVENTS) });
+    dashboardTime.applyTo(params);
+
+    const res = await fetch(`/api/events?${params}`);
     if (!res.ok) throw new Error("HTTP " + res.status);
     events = await res.json();
     refreshHostOptions();
@@ -719,6 +796,7 @@ async function connectRealtime() {
     .build();
 
   connection.on("ReceiveEvent", addEvent);
+  connection.on("ReceiveAlert", (alert) => window.alertBus.publish(alert));
 
   connection.onreconnecting(() => setStatus("Đang kết nối lại…", "connecting"));
   connection.onreconnected(() => {
@@ -818,5 +896,13 @@ for (const btn of document.querySelectorAll("[data-insight]")) {
     window.renderInsight(btn.dataset.insight);
   });
 }
+
+// Moc khoi phuc ve BAT DONG BO, thuong sau khi bang da ve xong -> phai ve lai mot
+// lan nua, khong thi mo trang len se khong thay badge "↺ doc bu" nao cho toi khi co
+// event moi tinh co day render.
+window.recoveryMarks.whenReady(() => {
+  render();
+  renderLogLeaves();
+});
 
 loadInitial().then(connectRealtime);
