@@ -108,6 +108,13 @@
             Khôi phục
           </button>
 
+          <!-- Badge dem so dong DANG BAT (khac hai badge tren: chung dem viec can lam,
+             cai nay dem cau hinh dang co hieu luc). -->
+          <button type="button" class="tab" data-tab="blacklist">
+            Blacklist
+            <span id="blacklist-badge" class="tab-badge"></span>
+          </button>
+
           <!-- Cay phan cap kieu Event Viewer: nut folder KHONG mang class "tab" nen
              khong bi co che chuyen-tab hien co trong app.js bat vao; cac leaf ben
              trong CO mang class "tab" nen dung nguyen co che do, khong can sua
@@ -467,18 +474,14 @@
           <div class="toolbar">
             <strong>Scheduled Tasks</strong>
             <span id="tasks-count" class="count"></span>
-            <button type="button" id="task-dialog-open" class="btn btn--primary">
-              Tạo task mới…
-            </button>
             <button type="button" id="tasks-refresh" class="btn">
               Tải lại
             </button>
           </div>
 
           <p class="note">
-            Tạo/sửa task bằng nút "Create Task…" ở trên — hộp thoại 5 tab, đủ
-            Trigger / Action / Principal / Settings. Tên chưa có → tạo mới
-            (event 4698), tên đã có → ghi đè (event 4702).
+            Danh sách task hiện có trên máy (chỉ xem — app không tự tạo/sửa/xoá
+            task). Bấm vào một dòng để xem chi tiết, kể cả XML định nghĩa.
           </p>
 
           <div class="filters">
@@ -526,10 +529,6 @@
                     <option value="ComHandler">ComHandler</option>
                   </select>
                 </label>
-                <label class="check">
-                  <input type="checkbox" id="tasks-only-writable" /> Chỉ hiện
-                  cái thao tác được
-                </label>
               </div>
             </div>
 
@@ -544,17 +543,17 @@
             <div
               class="custom-views"
               data-scope="tasks"
-              data-view-fields="tasks-search,tasks-filter-state,tasks-filter-action,tasks-only-writable,tasks-sort"
+              data-view-fields="tasks-search,tasks-filter-state,tasks-filter-action,tasks-sort"
             ></div>
           </div>
 
           <div class="feed">
             <div class="feed__head">
-              Event vừa sinh ra hôm nay (4697/7040/7045)
+              Event Task vừa sinh ra (4698-4702)
             </div>
             <ul id="tasks-feed" class="feed__list">
               <li class="feed__empty">
-                Chưa có. Thử tạo hoặc bật/tắt một task ở trên.
+                Chưa có.
               </li>
             </ul>
           </div>
@@ -568,7 +567,6 @@
                   <th>Trạng thái</th>
                   <th>Lệnh</th>
                   <th>Lần chạy cuối</th>
-                  <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody id="tasks-body"></tbody>
@@ -581,18 +579,14 @@
           <div class="toolbar">
             <strong>Services</strong>
             <span id="services-count" class="count"></span>
-            <button type="button" id="service-dialog-open" class="btn btn--primary">
-              Tạo Service…
-            </button>
             <button type="button" id="services-refresh" class="btn">
               Tải lại
             </button>
           </div>
 
           <p class="note">
-            Tạo service bằng nút "Tạo Service…" ở trên — có thêm Mô tả,
-            Dependencies và tài khoản chạy. Tạo service sinh <strong>hai</strong>
-            event ở hai channel khác nhau: 7045 (System) và 4697 (Security).
+            Danh sách service hiện có trên máy (chỉ xem — app không tự tạo/sửa/xoá
+            service). Bấm vào một dòng để xem chi tiết cấu hình.
           </p>
 
           <div class="filters">
@@ -642,10 +636,6 @@
                     <option value="boot start">boot start</option>
                   </select>
                 </label>
-                <label class="check">
-                  <input type="checkbox" id="services-only-writable" /> Chỉ hiện
-                  cái thao tác được
-                </label>
               </div>
             </div>
 
@@ -660,17 +650,17 @@
             <div
               class="custom-views"
               data-scope="services"
-              data-view-fields="services-search,services-filter-state,services-filter-starttype,services-only-writable,services-sort"
+              data-view-fields="services-search,services-filter-state,services-filter-starttype,services-sort"
             ></div>
           </div>
 
           <div class="feed">
             <div class="feed__head">
-              Event vừa sinh ra hôm nay (4697/7040/7045)
+              Event Service vừa sinh ra (4697/7040/7045)
             </div>
             <ul id="services-feed" class="feed__list">
               <li class="feed__empty">
-                Chưa có. Thử tạo service hoặc đổi start type ở trên.
+                Chưa có.
               </li>
             </ul>
           </div>
@@ -684,7 +674,6 @@
                   <th>Trạng thái</th>
                   <th>Start type</th>
                   <th>Binary</th>
-                  <th>Thao tác</th>
                 </tr>
               </thead>
               <tbody id="services-body"></tbody>
@@ -779,8 +768,7 @@
 
           <p class="note">
             Mức <strong>Low</strong> là "ghi nhận hành vi" (tạo task, cài service) —
-            mentor có liệt kê nên vẫn lưu, nhưng mặc định ẩn để không lấn át cảnh báo
-            thật. Rule là so khớp chuỗi và đường dẫn, <strong>không phải sandbox</strong>.
+            mặc định ẩn để không lấn át cảnh báo thật. Rule là so khớp chuỗi và đường dẫn, <strong>không phải sandbox</strong>.
           </p>
 
           <!-- Bang rule: chinh la bang phan ra "hanh vi -> Event ID" cua mentor, lay
@@ -1057,6 +1045,148 @@
           </div>
 
           <p id="recovery-empty" class="empty">Đang tải…</p>
+        </section>
+
+        <!-- ============================================================ Tab Blacklist
+       Dau hieu da bi dong dau xau. KHAC SuspiciousIndicators trong code: cho nay giu
+       GIA TRI CU THE da gap tren may nay (tu hoc hoac nhap tay), sua duoc luc dang
+       chay; cho kia giu dau hieu TONG QUAT, hardcode, co unit test. Xem ghi chu o
+       Models/BlacklistEntry.cs ve ly do khong gop hai cai lam mot. -->
+        <section id="panel-blacklist" class="panel" hidden>
+          <div class="toolbar">
+            <strong>Blacklist — dấu hiệu đã đóng dấu xấu</strong>
+            <span id="blacklist-count" class="count"></span>
+            <button type="button" id="blacklist-refresh" class="btn">Tải lại</button>
+          </div>
+
+          <p class="note">
+            Gặp lại một trong các dấu hiệu này là sinh cảnh báo
+            <strong>BLACKLIST_HIT</strong> ngay, kể cả khi không rule chung nào khớp.
+            Dòng <em>tự học</em> do app tự thêm sau một cảnh báo High trên đường dẫn cụ
+            thể — app <strong>không bao giờ</strong> học binary nằm trong System32 /
+            Program Files. Cột "Số lần khớp" là cách rà dương tính giả: một dòng khớp
+            hàng nghìn lần gần như chắc chắn là học nhầm.
+          </p>
+
+          <!-- Bo loc. Tach RIENG khoi controlbar them moi ben duoi: gop lai thi hai
+             nhom o input canh nhau ma y nghia nguoc nhau (loc cai dang co / nhap cai
+             moi), rat de go nham o nay tuong o kia. -->
+          <div class="controlbar">
+            <label>
+              Tìm
+              <input
+                id="blacklist-filter-search"
+                class="search"
+                placeholder="lọc theo giá trị hoặc lý do…"
+              />
+            </label>
+
+            <label>
+              Loại
+              <select id="blacklist-filter-kind">
+                <option value="">Tất cả</option>
+                <option value="ExecutablePath">Đường dẫn đầy đủ</option>
+                <option value="FileName">Tên file</option>
+                <option value="CommandFragment">Chuỗi trong lệnh</option>
+                <option value="Account">Tài khoản</option>
+              </select>
+            </label>
+
+            <label>
+              Nguồn
+              <select id="blacklist-filter-source">
+                <option value="">Tất cả</option>
+                <option value="AutoLearned">Tự học</option>
+                <option value="Manual">Nhập tay</option>
+              </select>
+            </label>
+
+            <label>
+              Mức
+              <select id="blacklist-filter-severity">
+                <option value="">Tất cả</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+              </select>
+            </label>
+
+            <label>
+              Trạng thái
+              <select id="blacklist-filter-status">
+                <option value="">Tất cả</option>
+                <option value="enabled">Đang bật</option>
+                <option value="disabled">Đã tắt</option>
+              </select>
+            </label>
+
+            <label class="check">
+              <input type="checkbox" id="blacklist-filter-hit" /> Chỉ dòng đã
+              từng khớp
+            </label>
+
+            <button type="button" id="blacklist-filter-reset" class="btn">
+              Xoá lọc
+            </button>
+          </div>
+
+          <div class="controlbar">
+            <label>
+              Loại
+              <select id="blacklist-add-kind">
+                <option value="ExecutablePath">Đường dẫn đầy đủ</option>
+                <option value="FileName">Tên file</option>
+                <option value="CommandFragment">Chuỗi trong lệnh</option>
+                <option value="Account">Tài khoản</option>
+              </select>
+            </label>
+
+            <label>
+              Giá trị
+              <input
+                id="blacklist-add-value"
+                class="search"
+                placeholder="C:\Users\Public\evil.exe"
+              />
+            </label>
+
+            <label>
+              Mức
+              <select id="blacklist-add-severity">
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+              </select>
+            </label>
+
+            <label>
+              Lý do
+              <input id="blacklist-add-reason" class="search" placeholder="ghi chú…" />
+            </label>
+
+            <button type="button" id="blacklist-add" class="btn btn--primary">
+              Thêm vào blacklist
+            </button>
+          </div>
+
+          <div class="table-wrap">
+            <table id="blacklist-table">
+              <thead>
+                <tr>
+                  <th>Trạng thái</th>
+                  <th>Loại</th>
+                  <th>Giá trị</th>
+                  <th>Mức</th>
+                  <th>Nguồn</th>
+                  <th>Số lần khớp</th>
+                  <th>Khớp gần nhất</th>
+                  <th>Lý do</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="blacklist-body"></tbody>
+            </table>
+          </div>
+
+          <p id="blacklist-empty" class="empty">Đang tải…</p>
         </section>
 
         <!-- ============================================================ Nhat ky su kien
@@ -1665,14 +1795,15 @@
     <script src="detailpane.js"></script>
     <script src="logexport.js"></script>
     <script src="charts.js"></script>
-    <!-- Truoc manage.js: manage.js goi window.buildTaskDialog. -->
-    <script src="taskdialog.js"></script>
     <!-- PHAI dung truoc app.js: app.js goi window.createTimeRange ngay luc chay de
        dung bo loc thoi gian cua Dashboard. -->
     <script src="timerange.js"></script>
     <!-- PHAI dung truoc app.js: app.js goi window.recoveryMarks.whenReady de ve lai
        bang sau khi moc khoi phuc ve. -->
     <script src="recoverymark.js"></script>
+    <!-- PHAI dung truoc app.js: timeCell() goi window.blacklistMarks.match cho MOI
+       dong log de gan badge "⛔ blacklist". -->
+    <script src="blacklistmark.js"></script>
     <script src="app.js"></script>
     <script src="manage.js"></script>
     <script src="logsbrowse.js"></script>
@@ -1687,6 +1818,8 @@
        ben trong mot click handler, luc do file nay da chay xong tu lau. Dat o day de
        giu nhom "tab moi" lien nhau. -->
     <script src="recovery.js"></script>
+    <!-- Sau manage.js: dung window.showToast de bao ket qua thao tac. -->
+    <script src="blacklist.js"></script>
     <script src="customviews.js"></script>
   </body>
 </html>

@@ -19,7 +19,7 @@ public sealed record SavedLogExportResult(SavedLogInfo File, bool MessagesEmbedd
 /// <summary>
 /// Tương đương "Save All Events As…" / "Open Saved Log…" của Event Viewer.
 ///
-/// Rào an toàn cùng triết lý <c>SafeNameGuard</c>: tên file đến thẳng từ URL trình
+/// Rào chống path traversal ở tầng server: tên file đến thẳng từ URL trình
 /// duyệt vào một app chạy quyền Administrator, không ép về một thư mục cố định thì
 /// <c>..\..\Windows\System32\...</c> là đường dẫn hợp lệ để đọc hoặc ghi đè.
 /// </summary>

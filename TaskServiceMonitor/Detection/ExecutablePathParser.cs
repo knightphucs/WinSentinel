@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace TaskServiceMonitor.Detection;
 
 /// <summary>
@@ -28,12 +30,35 @@ internal static class ExecutablePathParser
     private const string SystemRootPrefix = @"\SystemRoot";
 
     /// <summary>
+    /// Đuôi file thực thi, dùng để tìm ranh giới giữa ĐƯỜNG DẪN và THAM SỐ khi dòng
+    /// lệnh không có dấu nháy. Xem <see cref="ExtractExecutable"/>.
+    /// </summary>
+    private static readonly Regex ExecutableBoundary = new(
+        @"^(.*?\.(?:exe|com|bat|cmd|scr|sys|dll|ps1|vbs|js|msi|msc))(?:\s|$)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
     /// Bóc exe khỏi dòng lệnh. Trả về chuỗi đã cắt tham số nhưng CHƯA giãn biến
     /// môi trường — bên gọi tự quyết định có giãn hay không (xem <see cref="Normalize"/>).
     /// </summary>
     /// <remarks>
-    /// Cùng thuật toán với <c>InputPolicy.ExtractExecutablePath</c>; lớp đó gọi
-    /// sang đây để hai bên không bao giờ lệch nhau.
+    /// 🪤 BẪY ĐÃ DÍNH (bắt được bằng test end-to-end trên 200 event thật): cắt tại dấu
+    /// cách đầu tiên là SAI với đường dẫn có khoảng trắng mà không có nháy — dạng rất
+    /// phổ biến trong log thật vì <c>Program Files</c> có dấu cách:
+    /// <code>
+    /// C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe
+    ///   → cắt tại dấu cách → "C:\Program" → tên file thành "program"
+    /// </code>
+    /// Hậu quả: mọi so khớp theo đường dẫn/tên file đều trượt. Blacklist không khớp,
+    /// và <c>MatchLivingOffTheLandBinary</c> BỎ SÓT LOLBin nào nằm trong thư mục có
+    /// dấu cách.
+    ///
+    /// Sửa bằng cách tìm ranh giới theo ĐUÔI FILE thay vì theo dấu cách đầu tiên.
+    /// Regex dùng <c>.*?</c> (không tham) nên với <c>cmd.exe /c C:\a\b.exe</c> nó dừng
+    /// ở <c>cmd.exe</c> — đúng, vì thứ được CHẠY là cmd.exe.
+    ///
+    /// Không có đuôi nào khớp (ví dụ ComHandler <c>"OneSettings Refresh Cache Task
+    /// Handler"</c> — tên COM chứ không phải đường dẫn) thì quay về cách cũ.
     /// </remarks>
     internal static string ExtractExecutable(string raw)
     {
@@ -51,6 +76,12 @@ internal static class ExecutablePathParser
             return closing > 1 ? text[1..closing] : text[1..];
         }
 
+        var boundary = ExecutableBoundary.Match(text);
+        if (boundary.Success)
+        {
+            return boundary.Groups[1].Value;
+        }
+
         var space = text.IndexOf(' ');
         return space > 0 ? text[..space] : text;
     }
@@ -62,8 +93,7 @@ internal static class ExecutablePathParser
     /// CỐ Ý KHÔNG gọi <c>Path.GetFullPath</c>: đường dẫn ở đây đến từ event log của
     /// máy khác, file có thể không tồn tại trên máy đang chạy app, và
     /// <c>GetFullPath</c> sẽ ghép nhầm với thư mục làm việc hiện tại cho đường dẫn
-    /// tương đối. Đây là khác biệt căn bản so với <c>InputPolicy</c> — lớp đó xét
-    /// đường dẫn SẮP chạy trên chính máy này nên bắt buộc phải chuẩn hoá tuyệt đối.
+    /// tương đối.
     /// </summary>
     internal static string Normalize(string? path)
     {

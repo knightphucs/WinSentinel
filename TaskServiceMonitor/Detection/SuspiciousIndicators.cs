@@ -104,6 +104,42 @@ internal static class SuspiciousIndicators
         [.. HighConfidenceLolBins, .. ContextualLolBins];
 
     /// <summary>
+    /// Shell (<c>cmd</c>, <c>powershell</c>). Mentor nêu đích danh <c>cmd /c</c>, nhưng
+    /// nhóm này <b>bắt buộc phải xét theo ngữ cảnh</b> — không được báo động chỉ vì
+    /// thấy tên.
+    ///
+    /// Lý do: <c>cmd.exe</c> và <c>powershell.exe</c> là hai binary được task/service
+    /// hợp lệ dùng nhiều nhất trên một máy Windows bình thường. Chấm High theo tên
+    /// thôi thì tab Cảnh báo ngập ngay — đúng thảm hoạ mà
+    /// <see cref="ContextualLolBins"/> (rundll32) đã dạy một lần: 6/6 dương tính giả.
+    ///
+    /// Vì vậy chỉ báo khi shell ĐI KÈM một dấu hiệu khác — xem
+    /// <see cref="MatchContextualShell"/>.
+    /// </summary>
+    internal static readonly string[] ContextualShells =
+    [
+        "cmd.exe",
+        "powershell.exe",
+        "pwsh.exe",
+        "powershell_ise.exe"
+    ];
+
+    /// <summary>
+    /// Toán tử nối lệnh. Một shell chạy MỘT lệnh đơn giản là chuyện thường; nối nhiều
+    /// lệnh lại là dấu hiệu của chuỗi thao tác được dựng sẵn (tải → chạy → xoá dấu vết).
+    ///
+    /// CỐ Ý không có <c>&amp;</c> trần và <c>;</c>: chúng xuất hiện quá nhiều trong
+    /// tham số hợp lệ (URL có <c>&amp;</c>, đường dẫn có <c>;</c>) nên sẽ gây dương
+    /// tính giả. Chỉ nới nếu đo trên dữ liệu thật thấy an toàn.
+    /// </summary>
+    internal static readonly string[] CommandChainOperators =
+    [
+        "&&",
+        "||",
+        " | "
+    ];
+
+    /// <summary>
     /// Dấu hiệu "chạy thứ gì đó từ xa / từ nguồn bất thường" trong tham số dòng lệnh.
     /// Đây là thứ biến một lời gọi <c>rundll32</c> bình thường thành đáng ngờ.
     /// </summary>
@@ -244,20 +280,46 @@ internal static class SuspiciousIndicators
     /// Đường dẫn có nằm trong thư mục hệ thống chuẩn không. Rỗng/không bóc được thì
     /// coi là CHUẨN (trả <c>true</c>) — thà bỏ sót còn hơn báo động vì thiếu dữ liệu.
     /// </summary>
+    /// <remarks>
+    /// 🪤 BẪY ĐÃ DÍNH: so trên bản ĐÃ BÓC EXE thôi là SAI với mọi đường dẫn có khoảng
+    /// trắng mà không có nháy. <c>ExtractExecutable</c> cắt tại dấu cách đầu tiên, nên
+    /// <c>C:\Program Files\App\svc.exe</c> thành <c>C:\Program</c> — không còn khớp
+    /// tiền tố <c>C:\Program Files\</c> nữa, và cả thư mục Program Files bị coi là
+    /// "không tiêu chuẩn".
+    ///
+    /// Hai hậu quả thật: <c>SERVICE_NONSTANDARD_PATH</c> báo nhầm mọi service cài ở
+    /// Program Files ghi đường dẫn không nháy, và <c>BlacklistLearner</c> — vốn dựa
+    /// vào đúng hàm này làm rào chặn quan trọng nhất — sẽ ĐÓNG DẤU XẤU một binary hợp
+    /// lệ. Test <c>KhongBaoGioHoc_BinaryTrongThuMucHeThong</c> bắt được chỗ này.
+    ///
+    /// Sửa bằng cách so THÊM bản chưa bóc exe. Câu hỏi ở đây là "đường dẫn này có nằm
+    /// dưới thư mục X không", mà phép so tiền tố vốn không cần biết tên exe kết thúc ở
+    /// đâu — nên bản chưa bóc mới là bản đúng, bản đã bóc chỉ là phòng khi chuỗi có
+    /// tham số phía sau.
+    /// </remarks>
     internal static bool IsInStandardSystemDirectory(string? path)
     {
-        var normalized = ExecutablePathParser.ExtractAndNormalize(path);
+        // Ban CHUA boc exe: dung cho đường dẫn có khoảng trắng, không nháy.
+        var raw = ExecutablePathParser.Normalize(path);
 
-        if (normalized.Length == 0)
+        // Ban DA boc exe: dung khi chuoi mang ca tham so phia sau.
+        var extracted = ExecutablePathParser.ExtractAndNormalize(path);
+
+        if (raw.Length == 0 && extracted.Length == 0)
         {
             return true;
         }
 
-        var expanded = ExecutablePathParser.ExpandLocally(normalized);
+        string[] candidates =
+        [
+            raw,
+            extracted,
+            ExecutablePathParser.ExpandLocally(raw),
+            ExecutablePathParser.ExpandLocally(extracted)
+        ];
 
         return StandardSystemDirectories.Any(dir =>
-            normalized.StartsWith(dir, StringComparison.OrdinalIgnoreCase) ||
-            expanded.StartsWith(dir, StringComparison.OrdinalIgnoreCase));
+            candidates.Any(c => c.Length > 0 && c.StartsWith(dir, StringComparison.OrdinalIgnoreCase)));
     }
 
     /// <summary>
@@ -328,6 +390,63 @@ internal static class SuspiciousIndicators
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Shell (<c>cmd</c>/<c>powershell</c>) CỘNG VỚI một dấu hiệu khác trong tham số.
+    /// Thiếu vế thứ hai thì KHÔNG báo — xem <see cref="ContextualShells"/> để biết vì sao.
+    ///
+    /// Bốn loại ngữ cảnh làm một lời gọi shell trở nên đáng ngờ:
+    /// <list type="number">
+    ///   <item>tham số trỏ vào thư mục người dùng ghi được (<c>cmd /c %TEMP%\a.bat</c>)</item>
+    ///   <item>tham số có dấu hiệu tải/chạy từ xa (<c>http://</c>, UNC)</item>
+    ///   <item>tham số chứa cờ đáng ngờ (<c>-enc</c>, <c>IEX</c>...)</item>
+    ///   <item>tham số nối nhiều lệnh (<c>&amp;&amp;</c>, <c>||</c>)</item>
+    /// </list>
+    ///
+    /// Trả về chuỗi mô tả cả hai vế (<c>"cmd.exe + http://"</c>) để câu bằng chứng nói
+    /// rõ vì sao lời gọi này bị chấm, thay vì chỉ nói "dùng cmd.exe".
+    /// </summary>
+    internal static string? MatchContextualShell(string? commandLine, string? arguments)
+    {
+        if (string.IsNullOrWhiteSpace(commandLine))
+        {
+            return null;
+        }
+
+        var fileName = ExecutablePathParser.FileName(commandLine);
+
+        var shell = ContextualShells.FirstOrDefault(
+            s => s.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+
+        if (shell is null || string.IsNullOrWhiteSpace(arguments))
+        {
+            return null;
+        }
+
+        var writable = MatchWritableDirectoryInText(arguments);
+        if (writable is not null)
+        {
+            return $"{shell} + tham số trỏ '{writable}'";
+        }
+
+        var remote = RemoteExecutionIndicators.FirstOrDefault(
+            i => arguments.Contains(i, StringComparison.OrdinalIgnoreCase));
+        if (remote is not null)
+        {
+            return $"{shell} + '{remote}'";
+        }
+
+        var fragment = MatchSuspiciousCommandFragment(arguments);
+        if (fragment is not null)
+        {
+            return $"{shell} + cờ '{fragment}'";
+        }
+
+        var chain = CommandChainOperators.FirstOrDefault(
+            op => arguments.Contains(op, StringComparison.Ordinal));
+
+        return chain is null ? null : $"{shell} + nối lệnh '{chain.Trim()}'";
     }
 
     /// <summary>Cờ dòng lệnh đáng ngờ xuất hiện ở bất kỳ giá trị nào truyền vào.</summary>

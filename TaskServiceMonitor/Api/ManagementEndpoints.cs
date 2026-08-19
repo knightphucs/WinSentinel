@@ -8,15 +8,13 @@ using TaskServiceMonitor.Monitoring;
 namespace TaskServiceMonitor.Api;
 
 /// <summary>
-/// Dạng RÚT GỌN, giữ lại để tương thích ngược (form 4 ô cũ, script, curl demo).
-/// Hộp thoại mới gửi thẳng <see cref="TaskDefinitionRequest"/>.
+/// CHỈ ĐỌC: liệt kê/xem chi tiết Task/Service hiện có trên máy (qua WinAPI) và trạng
+/// thái nội bộ của bộ giám sát log. Trước đây file này còn có các endpoint GHI
+/// (tạo/sửa/xoá/bật-tắt/start-stop task và service) — mentor xác nhận app chỉ cần
+/// MONITORING, lấy event/log từ Windows và theo dõi hành vi, không cần tự thao tác
+/// Task/Service, nên các endpoint đó (cùng <c>SafeNameGuard</c>/<c>InputPolicy</c> vốn
+/// chỉ tồn tại để bảo vệ chúng) đã bị gỡ bỏ.
 /// </summary>
-public sealed record CreateTaskRequest(string Name, string Command, string? Arguments, string? StartBoundary);
-public sealed record CreateServiceRequest(
-    string Name, string BinaryPath, string? StartType, string? DisplayName,
-    string? Description = null, string[]? Dependencies = null, string? Account = null);
-public sealed record ChangeStartTypeRequest(string StartType);
-
 public static class ManagementEndpoints
 {
     /// <summary>
@@ -26,8 +24,7 @@ public static class ManagementEndpoints
     /// trên: ô này để trả lời "hệ thống có đang chạy đúng không", cần con số toàn cục.
     /// </summary>
     private static async Task<IResult> GetOverview(
-        MonitorDbContext db, ChannelStatusRegistry registry, SafeNameGuard guard,
-        CancellationToken ct)
+        MonitorDbContext db, ChannelStatusRegistry registry, CancellationToken ct)
     {
         var since = DateTime.UtcNow.AddHours(-24);
 
@@ -108,7 +105,6 @@ public static class ManagementEndpoints
         {
             isElevated = ElevationInfo.IsElevated(),
             currentUser = ElevationInfo.CurrentUserName(),
-            writablePrefix = guard.WritablePrefix,
             channels = registry.All(),
             totalEvents = total,
             oldestEventUtc = span?.Oldest,
@@ -242,11 +238,10 @@ public static class ManagementEndpoints
 
     public static void MapManagementEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/system/status", (SafeNameGuard guard) => Results.Ok(new
+        app.MapGet("/api/system/status", () => Results.Ok(new
         {
             isElevated = ElevationInfo.IsElevated(),
-            currentUser = ElevationInfo.CurrentUserName(),
-            writablePrefix = guard.WritablePrefix
+            currentUser = ElevationInfo.CurrentUserName()
         }));
 
         // Trang thai THAT cua tung channel (subscribe thanh cong hay khong, co dang
@@ -262,7 +257,7 @@ public static class ManagementEndpoints
         // cua Log Summary, nay xem duoc tung dong.
         app.MapGet("/api/system/recovered", GetRecovered);
 
-        // ------------------------------------------------------------ Tasks
+        // ------------------------------------------------------------ Tasks (chỉ đọc)
         app.MapGet("/api/tasks", (TaskManager tasks) => Run(() => Results.Ok(tasks.List())));
 
         app.MapGet("/api/tasks/xml", (TaskManager tasks, string path) =>
@@ -274,174 +269,23 @@ public static class ManagementEndpoints
         app.MapGet("/api/tasks/detail", (TaskManager tasks, string path) =>
             Run(() => Results.Ok(tasks.Detail(path))));
 
-        // Ten chua co -> tao moi (4698). Ten da co -> ghi de (4702).
-        app.MapPost("/api/tasks", (TaskManager tasks, CreateTaskRequest req) => Run(() =>
-        {
-            RequireElevation();
-
-            // Minimal API KHONG ep buoc thanh vien non-nullable cua record: body {} van
-            // bind duoc voi moi field null. Khong chan o day thi null di sau vao COM/
-            // Win32 roi bung ra 500 tho thay vi 400.
-            RequireField(req.Name, "name");
-            RequireField(req.Command, "command");
-
-            tasks.CreateOrUpdate(new TaskDefinitionRequest
-            {
-                Name = req.Name,
-                Actions = [new ActionRequest("Exec", req.Command, req.Arguments)],
-                Triggers = [new TriggerRequest("Time", req.StartBoundary)],
-            });
-
-            return Results.Ok(new
-            {
-                message = $"Da ghi task '{req.Name}'. Tao moi sinh event 4698, ghi de sinh 4702."
-            });
-        }));
-
-        // Dang DAY DU cho hop thoai 5 tab. Query ?api=objectmodel doi sang duong
-        // TaskService.NewTask() de doi chieu hai cach lam - xem TaskManager.
-        app.MapPost("/api/tasks/full",
-            (TaskManager tasks, TaskDefinitionRequest req, string? api) => Run(() =>
-        {
-            RequireElevation();
-            RequireField(req.Name, "name");
-
-            if (string.Equals(api, "objectmodel", StringComparison.OrdinalIgnoreCase))
-            {
-                tasks.CreateViaObjectModel(req);
-            }
-            else
-            {
-                tasks.CreateOrUpdate(req);
-            }
-
-            return Results.Ok(new
-            {
-                message = $"Da ghi task '{req.Name}' ({req.Actions.Count} action, " +
-                          $"{req.Triggers.Count} trigger). Tao moi sinh 4698, ghi de sinh 4702."
-            });
-        }));
-
-        app.MapDelete("/api/tasks", (TaskManager tasks, string name) => Run(() =>
-        {
-            RequireElevation();
-            tasks.Delete(name);
-            return Results.Ok(new { message = $"Da xoa task '{name}' (event 4699)." });
-        }));
-
-        app.MapPost("/api/tasks/{name}/enable", (TaskManager tasks, string name) => Run(() =>
-        {
-            RequireElevation();
-            tasks.SetEnabled(name, true);
-            return Results.Ok(new { message = $"Da bat task '{name}' (event 4700)." });
-        }));
-
-        app.MapPost("/api/tasks/{name}/disable", (TaskManager tasks, string name) => Run(() =>
-        {
-            RequireElevation();
-            tasks.SetEnabled(name, false);
-            return Results.Ok(new { message = $"Da tat task '{name}' (event 4701)." });
-        }));
-
-        app.MapPost("/api/tasks/{name}/run", (TaskManager tasks, string name) => Run(() =>
-        {
-            RequireElevation();
-            tasks.RunNow(name);
-            return Results.Ok(new { message = $"Da chay task '{name}'." });
-        }));
-
-        // ------------------------------------------------------------ Services
+        // ------------------------------------------------------------ Services (chỉ đọc)
         app.MapGet("/api/services", (ServiceManager services) => Run(() => Results.Ok(services.List())));
 
         // Nhu /api/tasks/detail: 3 loi goi QueryServiceConfig2 moi service (description,
         // delayed auto start, recovery actions) nen chi chay khi mo modal.
         app.MapGet("/api/services/{name}", (ServiceManager services, string name) =>
             Run(() => Results.Ok(services.Detail(name))));
-
-        app.MapPost("/api/services", (ServiceManager services, CreateServiceRequest req) => Run(() =>
-        {
-            RequireElevation();
-            RequireField(req.Name, "name");
-            RequireField(req.BinaryPath, "binaryPath");
-            services.Create(
-                req.Name, req.BinaryPath, req.StartType ?? "demand start", req.DisplayName,
-                req.Description, req.Dependencies, req.Account);
-            return Results.Ok(new { message = $"Da tao service '{req.Name}'. Xem event 7045 o tab Dashboard." });
-        }));
-
-        app.MapDelete("/api/services", (ServiceManager services, string name) => Run(() =>
-        {
-            RequireElevation();
-            services.Delete(name);
-            return Results.Ok(new { message = $"Da xoa service '{name}'." });
-        }));
-
-        app.MapPost("/api/services/{name}/start", (ServiceManager services, string name) => Run(() =>
-        {
-            RequireElevation();
-            services.Start(name);
-            return Results.Ok(new { message = $"Da start service '{name}'." });
-        }));
-
-        app.MapPost("/api/services/{name}/stop", (ServiceManager services, string name) => Run(() =>
-        {
-            RequireElevation();
-            services.Stop(name);
-            return Results.Ok(new { message = $"Da stop service '{name}'." });
-        }));
-
-        app.MapPost("/api/services/{name}/starttype",
-            (ServiceManager services, string name, ChangeStartTypeRequest req) => Run(() =>
-        {
-            RequireElevation();
-            RequireField(req.StartType, "startType");
-            services.ChangeStartType(name, req.StartType);
-            return Results.Ok(new { message = $"Da doi start type cua '{name}'. Xem event 7040 o tab Dashboard." });
-        }));
     }
 
     /// <summary>
-    /// Minimal API bind body <c>{}</c> thành record với mọi field null, KHÔNG ném lỗi
-    /// dù thành viên khai là non-nullable. Thiếu bước này thì null đi sâu vào COM/Win32
-    /// rồi bung ra 500 thô — ví dụ <c>ParseStartType(null)</c> ném NullReferenceException.
-    /// </summary>
-    private static void RequireField(string? value, string fieldName)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException($"Thieu tham so '{fieldName}'.");
-        }
-    }
-
-    private sealed class NotElevatedException() : Exception(
-        "Thao tac nay can quyen Administrator. Dong app, mo PowerShell bang " +
-        "'Run as administrator' roi chay lai: dotnet run --project TaskServiceMonitor");
-
-    private static void RequireElevation()
-    {
-        if (!ElevationInfo.IsElevated())
-        {
-            throw new NotElevatedException();
-        }
-    }
-
-    /// <summary>
-    /// Đổi exception thành mã HTTP có nghĩa. Quan trọng nhất:
-    /// vi phạm rào an toàn → 403 chứ không phải 500.
+    /// Đổi exception thành mã HTTP có nghĩa.
     /// </summary>
     private static IResult Run(Func<IResult> action)
     {
         try
         {
             return action();
-        }
-        catch (UnsafeTargetException ex)
-        {
-            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status403Forbidden);
-        }
-        catch (NotElevatedException ex)
-        {
-            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status401Unauthorized);
         }
         catch (ArgumentException ex)
         {

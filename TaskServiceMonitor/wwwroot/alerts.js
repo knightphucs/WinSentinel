@@ -386,6 +386,36 @@ window.onTabShown.subscribe((tab) => {
   }
 });
 
+/**
+ * Mở tab Cảnh báo và lọc sẵn theo một rule.
+ *
+ * Dùng bởi cột "Số lần khớp" ở tab Blacklist: một dấu hiệu có hitCount = 4 nghĩa là
+ * server đã khớp nó 4 lần, nhưng 4 event đó có thể nằm NGOÀI 200 dòng mới nhất mà
+ * bảng log hiển thị — không có đường này thì người xem không tài nào đi tới chúng.
+ *
+ * Nới lỏng bộ lọc mức và trạng thái về "tất cả": mục đích là thấy ĐỦ, còn bộ lọc mặc
+ * định (Medium trở lên / chưa xử lý) sẽ âm thầm giấu bớt đúng thứ vừa bấm để xem.
+ */
+window.showAlertsForRule = async (ruleId) => {
+  const tab = document.querySelector('.tab[data-tab="alerts"]');
+  if (tab) tab.click();
+
+  al.filterSeverity.value = "Low";
+  al.filterAck.value = "";
+
+  // loadRules() chay bat dong bo khi mo tab lan dau nen option co the chua ton tai.
+  // Them tay de viec loc khong phu thuoc vao thu tu hai lenh nay ve truoc.
+  if (![...al.filterRule.options].some((o) => o.value === ruleId)) {
+    const option = document.createElement("option");
+    option.value = ruleId;
+    option.textContent = ruleId;
+    al.filterRule.appendChild(option);
+  }
+
+  al.filterRule.value = ruleId;
+  await loadAlerts();
+};
+
 window.alertBus.subscribe((alert) => {
   pushAlertBanner(alert);
   refreshBadge();

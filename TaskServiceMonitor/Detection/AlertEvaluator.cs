@@ -19,6 +19,7 @@ namespace TaskServiceMonitor.Detection;
 /// </summary>
 internal sealed class AlertEvaluator(
     CorrelationRules correlation,
+    BlacklistRegistry blacklist,
     AlertStorageService storage,
     ILogger<AlertEvaluator> logger)
 {
@@ -56,7 +57,15 @@ internal sealed class AlertEvaluator(
             {
                 saved.Add(alert);
             }
+
+            // Hit High tren mot duong dan cu the -> dong dau vao blacklist de lan sau
+            // gap lai la bao ngay. Dieu kien hoc rat hep, xem BlacklistLearner.
+            await TryLearnAsync(evt, rule.Id, severity, evidence, ct);
         }
+
+        // Blacklist chay RIENG, khong nam trong RuleCatalog.All: no can danh sach lay
+        // tu DB nen khong phai ham thuan. Cung ly do voi CorrelationRules.
+        await EvaluateBlacklistAsync(evt, saved, detectedAt, ct);
 
         // Rule tương quan chạy sau: chúng cần event hiện tại đã nằm trong DB.
         IReadOnlyList<(string RuleId, string RuleName, RuleHit Hit)> correlationHits;
@@ -86,6 +95,90 @@ internal sealed class AlertEvaluator(
 
         return saved;
     }
+
+    /// <summary>
+    /// So event với blacklist rồi sinh cảnh báo <c>BLACKLIST_HIT</c>.
+    ///
+    /// Một event có thể khớp nhiều dòng blacklist, nhưng CHỈ sinh MỘT cảnh báo (gộp
+    /// bằng chứng): unique index <c>IX_Alerts_Dedup</c> là <c>(SourceEventId, RuleId)</c>
+    /// nên hai cảnh báo cùng rule trên cùng event sẽ bị chặn ở tầng DB — dòng thứ hai
+    /// im lặng biến mất và người xem mất luôn bằng chứng của nó.
+    /// </summary>
+    private async Task EvaluateBlacklistAsync(
+        WindowsMonitorEvent evt, List<Alert> saved, DateTime detectedAt, CancellationToken ct)
+    {
+        IReadOnlyList<BlacklistMatch> matches;
+        try
+        {
+            matches = BlacklistMatcher.Match(evt, blacklist.Active);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Khong so duoc blacklist cho event {EventId}.", evt.EventId);
+            return;
+        }
+
+        if (matches.Count == 0)
+        {
+            return;
+        }
+
+        // Muc = cao nhat trong cac dong khop.
+        var severity = matches.Max(m => m.Entry.Severity);
+
+        var evidence = string.Join(" | ", matches.Select(m =>
+            $"'{m.Entry.Value}' ({DescribeKind(m.Entry.Kind)}, {DescribeSource(m.Entry.Source)}) " +
+            $"khớp ở {m.MatchedIn}: {m.MatchedValue}"));
+
+        var alert = Build(
+            evt, RuleCatalog.BlacklistHit, "Khớp dấu hiệu trong blacklist",
+            severity, evidence,
+            "Dấu hiệu này đã bị đóng dấu xấu từ trước — xem tab Blacklist để biết vì sao.",
+            detectedAt);
+
+        if (await SaveSafelyAsync(alert, ct))
+        {
+            saved.Add(alert);
+        }
+
+        await blacklist.RecordHitsAsync(matches.Select(m => m.Entry.Id), ct);
+    }
+
+    private async Task TryLearnAsync(
+        WindowsMonitorEvent evt, string ruleId, RiskLevel severity, string evidence,
+        CancellationToken ct)
+    {
+        try
+        {
+            var candidate = BlacklistLearner.FromHit(evt, ruleId, severity, evidence);
+
+            if (candidate is not null)
+            {
+                await blacklist.LearnAsync(candidate, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Hoc that bai khong duoc lam mat canh bao vua sinh.
+            logger.LogWarning(ex, "Khong hoc duoc dau hieu tu rule {RuleId}.", ruleId);
+        }
+    }
+
+    private static string DescribeKind(BlacklistKind kind) => kind switch
+    {
+        BlacklistKind.ExecutablePath => "đường dẫn",
+        BlacklistKind.FileName => "tên file",
+        BlacklistKind.CommandFragment => "chuỗi lệnh",
+        BlacklistKind.Account => "tài khoản",
+        _ => kind.ToString()
+    };
+
+    private static string DescribeSource(BlacklistSource source) => source switch
+    {
+        BlacklistSource.AutoLearned => "tự học",
+        BlacklistSource.Manual => "nhập tay",
+        _ => source.ToString()
+    };
 
     private async Task<bool> SaveSafelyAsync(Alert alert, CancellationToken ct)
     {

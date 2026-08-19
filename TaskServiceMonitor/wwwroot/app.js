@@ -108,6 +108,15 @@ function timeCell(evt, text) {
     td.appendChild(window.recoveryMarks.badge());
   }
 
+  // Badge blacklist nam CHUNG o cell nay voi badge doc bu, KHONG them cot moi: thêm
+  // cột sẽ làm lệch bề rộng đã lưu ở localStorage của colresize.js VÀ lệch chỉ số cột
+  // của bộ lọc theo header (leaf.columns[colIndex]) ở cả 4 bảng log.
+  const blacklisted = window.blacklistMarks?.match(evt);
+  if (blacklisted) {
+    td.appendChild(document.createTextNode(" "));
+    td.appendChild(window.blacklistMarks.badge(blacklisted));
+  }
+
   return td;
 }
 window.timeCell = timeCell;
@@ -904,5 +913,21 @@ window.recoveryMarks.whenReady(() => {
   render();
   renderLogLeaves();
 });
+
+// Cung ly do voi recoveryMarks o tren: blacklist nap bat dong bo nen bang da ve xong
+// truoc khi co du lieu -> phai ve lai mot lan de badge "⛔ blacklist" xuat hien.
+window.blacklistMarks.whenReady(() => {
+  render();
+  renderLogLeaves();
+});
+
+// Blacklist doi luc dang chay (app tu hoc, hoac nguoi dung them/xoa o tab Blacklist)
+// -> ve lai bang de badge khop voi thuc te ngay, khong doi F5.
+window.blacklistChanged = () => {
+  window.blacklistMarks.refresh().then(() => {
+    render();
+    renderLogLeaves();
+  });
+};
 
 loadInitial().then(connectRealtime);

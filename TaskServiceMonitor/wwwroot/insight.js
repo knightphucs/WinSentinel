@@ -233,7 +233,6 @@ async function loadOverview() {
         o.oldestEventUtc
           ? `${window.formatTime(o.oldestEventUtc)} → ${window.formatTime(o.newestEventUtc)}`
           : "chưa có event nào"),
-      healthLine("Rào an toàn ghi", `chỉ tên bắt đầu bằng "${o.writablePrefix}"`),
     );
 
     const top = document.createElement("ul");

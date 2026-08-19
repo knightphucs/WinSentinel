@@ -35,6 +35,16 @@ internal static class RuleCatalog
     internal const string ServiceImagePathChanged = "SERVICE_IMAGEPATH_CHANGED";
     internal const string ServiceAccountChanged = "SERVICE_ACCOUNT_CHANGED";
 
+    /// <summary>
+    /// Phân tích LỆNH của service, không chỉ đường dẫn — xem
+    /// <c>EvaluateServiceSuspiciousCommand</c> để biết vì sao cần tách khỏi
+    /// <see cref="ServiceNonStandardPath"/>.
+    /// </summary>
+    internal const string ServiceSuspiciousCommand = "SERVICE_SUSPICIOUS_COMMAND";
+
+    /// <summary>Khớp một dấu hiệu đã bị đóng dấu trong blacklist — xem <c>BlacklistMatcher</c>.</summary>
+    internal const string BlacklistHit = "BLACKLIST_HIT";
+
     /// <summary>Lưới an toàn quét cả RawXml — xem <c>EvaluateSuspiciousRawContent</c>.</summary>
     internal const string SuspiciousRawContent = "SUSPICIOUS_RAW_CONTENT";
 
@@ -50,6 +60,18 @@ internal static class RuleCatalog
     /// field nào. Đưa vào bây giờ là đoán cấu trúc — trái quy tắc dự án.
     /// </summary>
     internal static readonly int[] ServiceFailureEventIds = [7000, 7009, 7024, 7031, 7034];
+
+    /// <summary>
+    /// Event ID nghĩa là task <b>ĐÃ THỰC SỰ CHẠY</b> một action, chứ không chỉ được
+    /// khai báo (200 = action bắt đầu, 201 = action xong kèm ResultCode).
+    ///
+    /// Phân biệt này quan trọng với đề bài của mentor ("theo dõi ... khi chúng THỰC
+    /// THI"): 4698 mới chỉ nói "có người đăng ký một task chạy X" — X có thể chưa bao
+    /// giờ chạy. 200/201 nói "X đã chạy thật". Cùng một lệnh đáng ngờ thì bằng chứng
+    /// thực thi nặng hơn hẳn bằng chứng khai báo, nên câu bằng chứng phải nói rõ
+    /// (xem <see cref="Context"/>).
+    /// </summary>
+    internal static readonly int[] TaskExecutionEventIds = [200, 201];
 
     // ---------------------------------------------------------------- Danh mục
 
@@ -207,6 +229,21 @@ internal static class RuleCatalog
 
         new()
         {
+            Id = ServiceSuspiciousCommand,
+            Name = "Lệnh của service chứa dấu hiệu đáng ngờ",
+            TypicalSeverity = RiskLevel.High,
+            ObjectType = MonitoredObjectType.Service,
+            Description =
+                "ImagePath của service gọi LOLBin, gọi shell kèm ngữ cảnh đáng ngờ, hoặc " +
+                "chứa cờ PowerShell mã hoá. Khác SERVICE_NONSTANDARD_PATH ở chỗ rule này " +
+                "đọc CẢ DÒNG LỆNH: một service trỏ vào System32 (đường dẫn hoàn toàn " +
+                "chuẩn) nhưng chạy 'cmd.exe /c ...' thì đường dẫn không nói lên điều gì.",
+            RelatedEventIds = [7045, 4697],
+            Evaluate = EvaluateServiceSuspiciousCommand
+        },
+
+        new()
+        {
             Id = ServiceStartTypeChanged,
             Name = "Start type của service bị đổi",
             TypicalSeverity = RiskLevel.Medium,
@@ -318,6 +355,19 @@ internal static class RuleCatalog
                 "Task được tạo rồi bị xoá trong thời gian ngắn — dấu hiệu chạy một lần " +
                 "rồi dọn dấu vết, thứ mà việc chấm điểm từng event rời rạc không thấy được.",
             RelatedEventIds = [4698, 4699, 106, 141]
+        },
+        new()
+        {
+            Id = BlacklistHit,
+            Name = "Khớp dấu hiệu trong blacklist",
+            TypicalSeverity = RiskLevel.High,
+            ObjectType = MonitoredObjectType.Unknown,
+            Description =
+                "Giá trị đã bị đóng dấu xấu (tự học từ một cảnh báo High trước đó, hoặc " +
+                "người dùng nhập tay) xuất hiện trở lại. Khác các rule trên ở chỗ nó " +
+                "không suy luận gì — chỉ so với danh sách đã chốt, nên gặp lại là báo " +
+                "ngay kể cả khi lần này không dấu hiệu chung nào khớp.",
+            RelatedEventIds = []
         }
     ];
 
@@ -409,7 +459,7 @@ internal static class RuleCatalog
         {
             return Hit(
                 RiskLevel.High,
-                $"Task '{evt.ObjectName}' chạy: {Command(evt)} — khớp '{match}'",
+                $"{Context(evt)} '{evt.ObjectName}' chạy: {Command(evt)} — khớp '{match}'",
                 "Kiểm tra file đích: thư mục này người dùng thường ghi đè được.");
         }
 
@@ -418,7 +468,7 @@ internal static class RuleCatalog
         return lowConfidence is not null
             ? Hit(
                 RiskLevel.Medium,
-                $"Task '{evt.ObjectName}' chạy: {Command(evt)} — khớp '{lowConfidence}'",
+                $"{Context(evt)} '{evt.ObjectName}' chạy: {Command(evt)} — khớp '{lowConfidence}'",
                 "ProgramData cũng ghi được nhưng nhiều phần mềm hợp lệ dùng — cần xác minh thêm.")
             : null;
     }
@@ -430,19 +480,23 @@ internal static class RuleCatalog
             return null;
         }
 
-        // Ba duong, do tin cay giam dan:
+        // Bon duong, do tin cay giam dan:
         //  1. LOLBin nhom "chi can goi la dang ngo" (mshta, regsvr32, certutil...).
         //  2. LOLBin nhom "can ngu canh" (rundll32, msiexec) + dau hieu chay tu xa.
         //     Do tren du lieu that: cham theo ten thoi thi rundll32 sinh 6/6 duong tinh gia.
-        //  3. LOLBin nap trong THAM SO (cmd.exe /c mshta http://...).
+        //  3. Shell (cmd/powershell) + ngu canh dang ngo - mentor neu dich danh 'cmd /c'.
+        //     Cung phai xet ngu canh, va vi ly do y het rundll32: day la hai binary
+        //     duoc task hop le dung nhieu nhat tren mot may Windows binh thuong.
+        //  4. LOLBin nap trong THAM SO (cmd.exe /c mshta http://...).
         var match = SuspiciousIndicators.MatchLivingOffTheLandBinary(evt.TaskCommand)
             ?? SuspiciousIndicators.MatchContextualLolBin(evt.TaskCommand, evt.TaskArguments)
+            ?? SuspiciousIndicators.MatchContextualShell(evt.TaskCommand, evt.TaskArguments)
             ?? SuspiciousIndicators.MatchLivingOffTheLandAnywhere(evt.TaskArguments);
 
         return match is not null
             ? Hit(
                 RiskLevel.High,
-                $"Task '{evt.ObjectName}' gọi '{match}' — {Command(evt)}",
+                $"{Context(evt)} '{evt.ObjectName}' gọi '{match}' — {Command(evt)}",
                 "Xem tham số đầy đủ trong raw XML để biết binary này được dùng làm gì.")
             : null;
     }
@@ -460,7 +514,7 @@ internal static class RuleCatalog
         return match is not null
             ? Hit(
                 RiskLevel.High,
-                $"Task '{evt.ObjectName}' dùng cờ '{match}' — {Command(evt)}",
+                $"{Context(evt)} '{evt.ObjectName}' dùng cờ '{match}' — {Command(evt)}",
                 "Giải mã tham số -EncodedCommand (base64 UTF-16LE) để xem lệnh thật.")
             : null;
     }
@@ -493,6 +547,40 @@ internal static class RuleCatalog
             RiskLevel.Medium,
             $"Service '{evt.ObjectName}' chạy từ {evt.ImagePath} — ngoài thư mục hệ thống",
             "Xác minh phần mềm cài service này.");
+    }
+
+    /// <summary>
+    /// Phân tích CẢ DÒNG LỆNH của service, không chỉ thư mục chứa nó.
+    ///
+    /// Vì sao tách khỏi <see cref="EvaluateServiceNonStandardPath"/>: rule kia chỉ hỏi
+    /// "binary nằm ở đâu". Một service có
+    /// <c>ImagePath = "C:\Windows\System32\cmd.exe /c powershell -enc ..."</c> nằm
+    /// đúng System32 nên rule kia im lặng hoàn toàn — trong khi đó chính là hành vi
+    /// đáng báo động nhất. Trước rule này, phía Service KHÔNG có phân tích lệnh nào
+    /// (Task có ba rule), một chỗ bất đối xứng lọt lưới.
+    ///
+    /// <c>ImagePath</c> vốn là cả dòng lệnh nên tham số nằm sẵn trong đó — truyền
+    /// chính nó vào cả hai vế của các hàm nhận (command, arguments).
+    /// </summary>
+    private static RuleHit? EvaluateServiceSuspiciousCommand(WindowsMonitorEvent evt)
+    {
+        if (evt.ObjectType != MonitoredObjectType.Service ||
+            string.IsNullOrWhiteSpace(evt.ImagePath))
+        {
+            return null;
+        }
+
+        var match = SuspiciousIndicators.MatchLivingOffTheLandBinary(evt.ImagePath)
+            ?? SuspiciousIndicators.MatchContextualLolBin(evt.ImagePath, evt.ImagePath)
+            ?? SuspiciousIndicators.MatchContextualShell(evt.ImagePath, evt.ImagePath)
+            ?? SuspiciousIndicators.MatchSuspiciousCommandFragment(evt.ImagePath);
+
+        return match is not null
+            ? Hit(
+                RiskLevel.High,
+                $"Service '{evt.ObjectName}' chạy lệnh chứa '{match}' — {evt.ImagePath}",
+                "Service hợp lệ hiếm khi cần shell hay LOLBin; xem lại phần mềm đã cài nó.")
+            : null;
     }
 
     private static RuleHit? EvaluateServiceStartTypeChanged(WindowsMonitorEvent evt)
@@ -622,6 +710,19 @@ internal static class RuleCatalog
         new() { Severity = severity, Evidence = evidence, Recommendation = recommendation };
 
     private static string Actor(WindowsMonitorEvent evt) => evt.ActorAccount ?? "(không rõ)";
+
+    /// <summary>
+    /// Mở đầu câu bằng chứng: phân biệt task mới chỉ được KHAI BÁO với task ĐÃ THỰC SỰ
+    /// CHẠY (event 200/201).
+    ///
+    /// Cùng một lệnh đáng ngờ, hai tình huống này khác hẳn nhau về mức độ khẩn: một
+    /// cái là "có người cài đặt sẵn", cái kia là "nó đã chạy rồi". Người trực đọc cảnh
+    /// báo cần thấy sự khác biệt đó ngay ở dòng đầu, không phải tự tra Event ID.
+    /// </summary>
+    private static string Context(WindowsMonitorEvent evt) =>
+        TaskExecutionEventIds.Contains(evt.EventId)
+            ? "⚡ ĐÃ THỰC THI — task"
+            : "Task";
 
     /// <summary>Ghép Command + Arguments thành một chuỗi đọc được cho câu bằng chứng.</summary>
     private static string Command(WindowsMonitorEvent evt) =>

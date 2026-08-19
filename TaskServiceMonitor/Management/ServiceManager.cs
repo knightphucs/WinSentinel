@@ -11,8 +11,7 @@ public sealed record ServiceInfo(
     string State,
     string StartType,
     string? ImagePath,
-    string? Account,
-    bool IsWritable);
+    string? Account);
 
 /// <summary>
 /// Bản đầy đủ cho modal chi tiết — thêm nhóm field mà <c>services.msc</c> hiện ở tab
@@ -33,7 +32,6 @@ public sealed record ServiceDetail(
     string StartType,
     string? ImagePath,
     string? Account,
-    bool IsWritable,
 
     string? Description,
     string ServiceTypeText,
@@ -54,12 +52,13 @@ public sealed record ServiceDetail(
     IReadOnlyList<string> RecoveryActions);
 
 /// <summary>
-/// Đọc và thao tác Windows Service qua P/Invoke <c>advapi32.dll</c> — cùng bộ hàm mà
-/// <c>services.msc</c> dùng.
+/// Đọc Windows Service qua P/Invoke <c>advapi32.dll</c> — cùng bộ hàm mà
+/// <c>services.msc</c> dùng để liệt kê/xem cấu hình.
 ///
-/// Mọi thao tác GHI đều đi qua <see cref="SafeNameGuard"/> trước. Đọc thì không giới hạn.
+/// CHỈ ĐỌC: theo yêu cầu của mentor, app không tự thao tác (tạo/sửa/xoá/start/stop)
+/// Task/Service nữa — chỉ giám sát log/event và đối chiếu trạng thái hiện tại.
 /// </summary>
-public sealed class ServiceManager(SafeNameGuard guard, InputPolicy policy, ILogger<ServiceManager> logger)
+public sealed class ServiceManager(ILogger<ServiceManager> logger)
 {
     public IReadOnlyList<ServiceInfo> List()
     {
@@ -113,8 +112,7 @@ public sealed class ServiceManager(SafeNameGuard guard, InputPolicy policy, ILog
                     DescribeState(entry.ServiceStatusProcess.dwCurrentState),
                     config.StartType,
                     config.ImagePath,
-                    config.Account,
-                    guard.IsWritable(name)));
+                    config.Account));
             }
 
             return result.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
@@ -225,7 +223,6 @@ public sealed class ServiceManager(SafeNameGuard guard, InputPolicy policy, ILog
             config.StartType,
             config.ImagePath,
             config.Account,
-            guard.IsWritable(name),
 
             TryReadDescription(service),
             config.ServiceTypeText,
@@ -346,221 +343,15 @@ public sealed class ServiceManager(SafeNameGuard guard, InputPolicy policy, ILog
             return actions;
         }, "recovery actions") ?? [];
 
-    // ---------------------------------------------------------------- Thao tac ghi
-
-    public void Create(
-        string name, string binaryPath, string startType, string? displayName,
-        string? description = null, IReadOnlyList<string>? dependencies = null,
-        string? account = null)
-    {
-        guard.EnsureWritable(name);
-        policy.EnsureValidName(name);
-
-        // QUAN TRONG NHAT trong ca file: service tao ra chay LocalSystem (khi account
-        // null), va start duoc ngay qua API. Khong chan o day thi mot o text tren
-        // trinh duyet thanh thuc thi quyen SYSTEM.
-        var resolvedPath = policy.EnsureAllowedExecutable(binaryPath, "binaryPath");
-
-        if (!string.IsNullOrWhiteSpace(displayName))
-        {
-            // Chan service ten 'WinSentinelX' nhung hien thi la 'Windows Update'.
-            policy.EnsureValidName(displayName, "displayName");
-        }
-
-        var resolvedAccount = InputPolicy.EnsureAllowedServiceAccount(account);
-        var dependencyBlock = policy.BuildDependencyMultiSz(dependencies);
-
-        using var scm = OpenSCManagerW(null, null, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
-        ThrowIfInvalid(scm, "Khong mo duoc Service Control Manager (can quyen Administrator).");
-
-        using var service = CreateServiceW(
-            scm, name, displayName ?? name,
-            // Can them SERVICE_CHANGE_CONFIG de doi Description ngay sau khi tao.
-            SERVICE_QUERY_STATUS | SERVICE_CHANGE_CONFIG,
-            SERVICE_WIN32_OWN_PROCESS,
-            ParseStartType(startType),
-            SERVICE_ERROR_NORMAL,
-            resolvedPath,
-            null, nint.Zero,
-            dependencyBlock,
-            resolvedAccount,
-            null); // Khong nhan mat khau - xem InputPolicy.AllowedServiceAccounts.
-
-        ThrowIfInvalid(service, $"Khong tao duoc service '{name}'.");
-
-        if (!string.IsNullOrWhiteSpace(description))
-        {
-            SetDescription(service, description);
-        }
-
-        logger.LogInformation(
-            "Da tao service {Name} -> {Path} (account={Account}, {Deps} dependency)",
-            name, resolvedPath, resolvedAccount ?? "LocalSystem", dependencies?.Count ?? 0);
-    }
-
-    /// <summary>
-    /// Description KHÔNG đặt được qua <c>CreateServiceW</c> — phải gọi riêng
-    /// <c>ChangeServiceConfig2</c> sau khi service đã tồn tại.
-    /// </summary>
-    private void SetDescription(SafeServiceHandle service, string description)
-    {
-        var text = nint.Zero;
-        var info = nint.Zero;
-
-        try
-        {
-            text = Marshal.StringToHGlobalUni(description);
-            var payload = new SERVICE_DESCRIPTION { lpDescription = text };
-
-            info = Marshal.AllocHGlobal(Marshal.SizeOf<SERVICE_DESCRIPTION>());
-            Marshal.StructureToPtr(payload, info, false);
-
-            if (!ChangeServiceConfig2W(service, SERVICE_CONFIG_DESCRIPTION, info))
-            {
-                // Service DA tao xong roi - mo ta chi la trang tri, khong dang de
-                // huy ca thao tac.
-                logger.LogWarning("Khong dat duoc mo ta cho service: {Error}",
-                    new Win32Exception(Marshal.GetLastWin32Error()).Message);
-            }
-        }
-        finally
-        {
-            if (info != nint.Zero) Marshal.FreeHGlobal(info);
-            if (text != nint.Zero) Marshal.FreeHGlobal(text);
-        }
-    }
-
-    /// <summary>Cho toi da bao lau de service tu dung han truoc khi xoa.</summary>
-    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
-
-    public void Delete(string name)
-    {
-        guard.EnsureWritable(name);
-
-        using var scm = OpenSCManagerW(null, null, SC_MANAGER_CONNECT);
-        ThrowIfInvalid(scm, "Khong mo duoc Service Control Manager.");
-
-        // Can them SERVICE_STOP + SERVICE_QUERY_STATUS: DeleteService tren mot
-        // service dang chay chi "danh dau xoa", KHONG xoa ngay - service van con
-        // trong EnumServicesStatusEx toi khi thuc su dung, khien dashboard tuong
-        // nhu xoa khong thanh cong. Phai dung han truoc.
-        using var service = OpenServiceW(scm, name,
-            DELETE | SERVICE_STOP | SERVICE_QUERY_STATUS);
-        ThrowIfInvalid(service, $"Khong mo duoc service '{name}'.");
-
-        if (QueryStatus(service) != SERVICE_STOPPED)
-        {
-            var status = new SERVICE_STATUS();
-            if (!ControlService(service, SERVICE_CONTROL_STOP, ref status))
-            {
-                var error = Marshal.GetLastWin32Error();
-                if (error != ERROR_SERVICE_NOT_ACTIVE)
-                {
-                    throw new Win32Exception(error, $"Khong dung duoc service '{name}' truoc khi xoa.");
-                }
-            }
-
-            var deadline = DateTime.UtcNow + StopTimeout;
-            while (QueryStatus(service) != SERVICE_STOPPED && DateTime.UtcNow < deadline)
-            {
-                Thread.Sleep(250);
-            }
-        }
-
-        if (!DeleteService(service))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Khong xoa duoc service '{name}'.");
-        }
-
-        logger.LogInformation("Da xoa service {Name}", name);
-    }
-
-    /// <summary>Doc trang thai hien tai (dwCurrentState) qua QueryServiceStatusEx.</summary>
-    private static uint QueryStatus(SafeServiceHandle service)
-    {
-        var size = (uint)Marshal.SizeOf<SERVICE_STATUS_PROCESS>();
-        var buffer = Marshal.AllocHGlobal((int)size);
-        try
-        {
-            if (!QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, buffer, size, out _))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error(),
-                    "Khong doc duoc trang thai service.");
-            }
-
-            return Marshal.PtrToStructure<SERVICE_STATUS_PROCESS>(buffer).dwCurrentState;
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
-    }
-
-    public void Start(string name)
-    {
-        guard.EnsureWritable(name);
-
-        using var scm = OpenSCManagerW(null, null, SC_MANAGER_CONNECT);
-        ThrowIfInvalid(scm, "Khong mo duoc Service Control Manager.");
-
-        using var service = OpenServiceW(scm, name, SERVICE_START);
-        ThrowIfInvalid(service, $"Khong mo duoc service '{name}'.");
-
-        if (!StartServiceW(service, 0, nint.Zero))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Khong start duoc service '{name}'.");
-        }
-    }
-
-    public void Stop(string name)
-    {
-        guard.EnsureWritable(name);
-
-        using var scm = OpenSCManagerW(null, null, SC_MANAGER_CONNECT);
-        ThrowIfInvalid(scm, "Khong mo duoc Service Control Manager.");
-
-        using var service = OpenServiceW(scm, name, SERVICE_STOP);
-        ThrowIfInvalid(service, $"Khong mo duoc service '{name}'.");
-
-        var status = new SERVICE_STATUS();
-        if (!ControlService(service, SERVICE_CONTROL_STOP, ref status))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"Khong stop duoc service '{name}'.");
-        }
-    }
-
-    public void ChangeStartType(string name, string startType)
-    {
-        guard.EnsureWritable(name);
-
-        using var scm = OpenSCManagerW(null, null, SC_MANAGER_CONNECT);
-        ThrowIfInvalid(scm, "Khong mo duoc Service Control Manager.");
-
-        using var service = OpenServiceW(scm, name, SERVICE_CHANGE_CONFIG);
-        ThrowIfInvalid(service, $"Khong mo duoc service '{name}'.");
-
-        // SERVICE_NO_CHANGE cho moi tham so khac = chi doi dung start type.
-        if (!ChangeServiceConfigW(service, SERVICE_NO_CHANGE, ParseStartType(startType),
-                SERVICE_NO_CHANGE, null, null, nint.Zero, null, null, null, null))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error(),
-                $"Khong doi duoc start type cua '{name}'.");
-        }
-
-        logger.LogInformation("Da doi start type cua {Name} thanh {StartType}", name, startType);
-    }
-
     // ---------------------------------------------------------------- Helper
+    //
+    // Trước đây có Create/SetDescription/Delete/Start/Stop/ChangeStartType ở đây,
+    // gọi CreateServiceW/ChangeServiceConfig2W/DeleteService/StartServiceW/
+    // ControlService/ChangeServiceConfigW của advapi32. Mentor xác nhận app chỉ cần
+    // MONITORING (đọc log + đối chiếu trạng thái hiện tại), không cần tự thao tác
+    // Service — đã gỡ bỏ cùng lớp rào SafeNameGuard/InputPolicy vốn chỉ tồn tại để
+    // bảo vệ các thao tác ghi đó.
 
-    private static void ThrowIfInvalid(SafeServiceHandle handle, string message)
-    {
-        if (handle.IsInvalid)
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error(), message);
-        }
-    }
-
-    /// <summary>Dùng đúng bộ chữ mà event 7040/7045 dùng, để dashboard hiển thị thống nhất.</summary>
     /// <summary>
     /// Đọc chuỗi kiểu MULTI_SZ: nhiều chuỗi nối nhau, mỗi chuỗi kết thúc bằng một ký
     /// tự null, cả khối kết thúc bằng null thứ hai.
@@ -641,18 +432,6 @@ public sealed class ServiceManager(SafeNameGuard guard, InputPolicy policy, ILog
         SERVICE_DEMAND_START => "demand start",
         SERVICE_DISABLED => "disabled",
         _ => "unknown"
-    };
-
-    private static uint ParseStartType(string value) => value.Trim().ToLowerInvariant() switch
-    {
-        "boot start" or "boot" => SERVICE_BOOT_START,
-        "system start" or "system" => SERVICE_SYSTEM_START,
-        "auto start" or "auto" => SERVICE_AUTO_START,
-        "demand start" or "demand" or "manual" => SERVICE_DEMAND_START,
-        "disabled" => SERVICE_DISABLED,
-        _ => throw new ArgumentException(
-            $"Start type khong hop le: '{value}'. Dung mot trong: " +
-            "boot start, system start, auto start, demand start, disabled.")
     };
 
     private static string DescribeState(uint value) => value switch

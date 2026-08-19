@@ -271,6 +271,8 @@ không làm event đổi màu. Tab Cảnh báo **mặc định lọc từ Medium
 | `SERVICE_ACCOUNT_CHANGED` | Tài khoản chạy service bị đổi | Medium → **High** nếu đổi sang LocalSystem | 4657 hoặc poller |
 | `SERVICE_STARTTYPE_CHANGED` | Start type bị đổi | Medium (xem ghi chú dưới) | 7040, 4657 |
 | `SERVICE_CRASH` | Service dừng đột ngột / không khởi động được | Medium → **High** nếu service vừa bị cài/sửa trong 24h | 7031/7034/7024/7000/7009 |
+| `SERVICE_SUSPICIOUS_COMMAND` | Lệnh của service chứa LOLBin / shell / cờ mã hoá | **High** | 7045, 4697 |
+| `BLACKLIST_HIT` | Khớp dấu hiệu đã bị đóng dấu xấu | **High** | mọi Event ID |
 | `SUSPICIOUS_RAW_CONTENT` | Nội dung event chứa dấu hiệu đáng ngờ (lưới an toàn) | **High** | mọi Event ID |
 
 > **`SERVICE_STARTTYPE_CHANGED` giữ Medium kể cả khi đổi sang auto start.**
@@ -305,6 +307,12 @@ Khớp **cả dạng biến môi trường nguyên văn lẫn dạng đã giãn*
 `-w hidden`, `-windowstyle hidden`, `-nop`, `-noprofile`,
 `-ExecutionPolicy Bypass`, `IEX`, `DownloadString`, `FromBase64String`.
 
+**Shell cần ngữ cảnh** (→ `TASK_LOLBIN`, `SERVICE_SUSPICIOUS_COMMAND`): `cmd.exe`,
+`powershell.exe`, `pwsh.exe`. Mentor nêu đích danh `cmd /c`, nhưng nhóm này **chỉ báo
+khi đi kèm** một trong bốn ngữ cảnh: tham số trỏ thư mục ghi được, dấu hiệu tải/chạy
+từ xa (`http://`, UNC), cờ đáng ngờ ở trên, hoặc nối lệnh (`&&`, `||`, `|`).
+Lý do y hệt `rundll32`: đây là hai binary mà task/service **hợp lệ** dùng nhiều nhất.
+
 **Principal quyền cao** (→ `TASK_ELEVATED`): `RunLevel = HighestAvailable`, hoặc
 `UserId` ∈ { `S-1-5-18`, `LocalSystem`, `NT AUTHORITY\SYSTEM`,
 `BUILTIN\Administrators`, `S-1-5-32-544` }.
@@ -312,6 +320,56 @@ Khớp **cả dạng biến môi trường nguyên văn lẫn dạng đã giãn*
 **Thư mục hệ thống được coi là chuẩn** (không báo `SERVICE_NONSTANDARD_PATH`):
 `C:\Windows\System32`, `C:\Windows\SysWOW64`, `C:\Windows\servicing`,
 `C:\Program Files`, `C:\Program Files (x86)`.
+
+---
+
+## 4.4. Blacklist — đóng dấu dấu hiệu đã gặp
+
+Trả lời phần mentor giao: *"detect kỹ hơn trong những lần chúng thực thi với tác vụ
+bất thường, từ đó đánh các dấu hiệu đó vào blacklist, rồi alert thẳng lên dashboard"*.
+
+**Hai lớp, cố ý KHÔNG gộp:**
+
+| | `SuspiciousIndicators` (code) | `Blacklist` (DB) |
+|---|---|---|
+| Nội dung | Dấu hiệu **tổng quát** (`%TEMP%`, `mshta.exe`, `-enc`) | Giá trị **cụ thể đã gặp trên máy này** |
+| Sửa | Phải build lại | Sửa lúc đang chạy, qua UI |
+| Kiểm chứng | Unit test trên 14 fixture thật | Đếm số lần khớp để rà dương tính giả |
+
+Gộp lại là tạo hai nguồn sự thật cho cùng một thứ. Blacklist **không** được seed bằng
+nội dung của `SuspiciousIndicators`.
+
+**Bốn rào của phần tự học** (`BlacklistLearner`) — bỏ cái nào cũng đủ làm ngập tab
+Cảnh báo:
+
+1. Chỉ học từ hit mức **High**.
+2. Chỉ học **đường dẫn cụ thể**, không học tên file trần, không học chuỗi con.
+3. **KHÔNG BAO GIỜ** học binary trong `System32` / `SysWOW64` / `Program Files`.
+4. Chỉ học từ 4 rule nói về một file cụ thể (xem `TeachingRules`).
+
+### ⚠️ Số đo thật — vì sao `TASK_WRITABLE_DIR` KHÔNG được dạy blacklist
+
+Lần chạy `--rebuild-alerts` đầu tiên trên **1.807 event thật**, rule đó dạy 2 đường
+dẫn và **cả hai đều là dương tính giả**, chiếm **17/19** cảnh báo `BLACKLIST_HIT`:
+
+```
+%localappdata%\microsoft\onedrive\onedrivestandaloneupdater.exe   10 hit
+...\onedrive\26.139.0720.0007\onedrivelauncher.exe                 7 hit
+```
+
+Cả hai là **OneDrive của Microsoft**. `%LOCALAPPDATA%` chính là nơi phần mềm per-user
+hợp lệ cài đặt (OneDrive, Teams, Chrome, VS Code) — không liệt kê hết được.
+
+Kết luận: **vị trí đủ để cảnh báo, không đủ để kết án vĩnh viễn**. Rule vẫn chạy và
+vẫn hiện ở tab Cảnh báo, chỉ không được dạy blacklist. Sau khi bỏ:
+`BLACKLIST_HIT` **19 → 2**, và 2 dòng còn lại là dương tính thật.
+
+`SERVICE_NONSTANDARD_PATH` thì **giữ lại** dù cũng là tín hiệu vị trí: một *service*
+chạy từ AppData bất thường hơn hẳn một *task*, vì service là phạm vi toàn máy và phải
+có quyền admin mới cài — phần mềm per-user không cài service vào AppData.
+
+Có 2 test khoá quyết định này lại (`KhongHoc_TuThuMucGhiDuoc_VIDUONGTINHGIA_ONEDRIVE`,
+`VanHoc_ServiceChayTuAppData`) — nới lại mà không đo là test đổ.
 
 ---
 

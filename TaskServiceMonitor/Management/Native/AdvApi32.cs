@@ -4,8 +4,13 @@ using Microsoft.Win32.SafeHandles;
 namespace TaskServiceMonitor.Management.Native;
 
 /// <summary>
-/// Khai báo P/Invoke tới <c>advapi32.dll</c> — đúng bộ hàm mà <c>services.msc</c> và
-/// <c>sc.exe</c> dùng để nói chuyện với Service Control Manager.
+/// Khai báo P/Invoke tới <c>advapi32.dll</c> — đúng bộ hàm ĐỌC mà <c>services.msc</c>
+/// dùng để nói chuyện với Service Control Manager (liệt kê, đọc cấu hình/trạng thái).
+///
+/// Mentor xác nhận app chỉ cần MONITORING (đọc log + đối chiếu trạng thái hiện tại),
+/// không cần tự thao tác Task/Service — nên các hàm GHI
+/// (<c>CreateServiceW</c>/<c>DeleteService</c>/<c>ChangeServiceConfigW</c>/
+/// <c>StartServiceW</c>/<c>ControlService</c>...) đã bị bỏ khỏi file này.
 ///
 /// File này CỐ Ý chỉ chứa khai báo, không chứa logic nghiệp vụ. Phần bọc an toàn nằm
 /// ở <see cref="TaskServiceMonitor.Management.ServiceManager"/>.
@@ -17,19 +22,13 @@ internal static class AdvApi32
     // ------------------------------------------------------------ Quyen truy cap
 
     internal const uint SC_MANAGER_CONNECT = 0x0001;
-    internal const uint SC_MANAGER_CREATE_SERVICE = 0x0002;
     internal const uint SC_MANAGER_ENUMERATE_SERVICE = 0x0004;
 
     internal const uint SERVICE_QUERY_CONFIG = 0x0001;
-    internal const uint SERVICE_CHANGE_CONFIG = 0x0002;
     internal const uint SERVICE_QUERY_STATUS = 0x0004;
-    internal const uint SERVICE_START = 0x0010;
-    internal const uint SERVICE_STOP = 0x0020;
-    internal const uint DELETE = 0x00010000;
 
     // ------------------------------------------------------------ Loai / trang thai
 
-    internal const uint SERVICE_WIN32_OWN_PROCESS = 0x00000010;
     internal const uint SERVICE_WIN32 = 0x00000030;
     internal const uint SERVICE_STATE_ALL = 0x00000003;
 
@@ -39,20 +38,11 @@ internal static class AdvApi32
     internal const uint SERVICE_DEMAND_START = 3;
     internal const uint SERVICE_DISABLED = 4;
 
-    internal const uint SERVICE_ERROR_NORMAL = 0x00000001;
-    internal const uint SERVICE_CONTROL_STOP = 0x00000001;
-
-    internal const uint SERVICE_STOPPED = 0x00000001;
-
     /// <summary>Level cho QueryServiceStatusEx: trả về SERVICE_STATUS_PROCESS.</summary>
     internal const int SC_STATUS_PROCESS_INFO = 0;
 
-    /// <summary>Giá trị báo "giữ nguyên tham số này" cho <c>ChangeServiceConfig</c>.</summary>
-    internal const uint SERVICE_NO_CHANGE = 0xFFFFFFFF;
-
     internal const int ERROR_INSUFFICIENT_BUFFER = 122;
     internal const int ERROR_MORE_DATA = 234;
-    internal const int ERROR_SERVICE_NOT_ACTIVE = 1062;
 
     /// <summary>Level cho <c>QueryServiceConfig2</c> — mỗi level trả về một struct khác nhau.</summary>
     internal const int SERVICE_CONFIG_DESCRIPTION = 1;
@@ -83,18 +73,6 @@ internal static class AdvApi32
         public uint dwWaitHint;
         public uint dwProcessId;
         public uint dwServiceFlags;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct SERVICE_STATUS
-    {
-        public uint dwServiceType;
-        public uint dwCurrentState;
-        public uint dwControlsAccepted;
-        public uint dwWin32ExitCode;
-        public uint dwServiceSpecificExitCode;
-        public uint dwCheckPoint;
-        public uint dwWaitHint;
     }
 
     /// <summary>
@@ -199,61 +177,6 @@ internal static class AdvApi32
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool QueryServiceConfig2W(
         SafeServiceHandle hService, int dwInfoLevel, nint lpBuffer, uint cbBufSize, out uint pcbBytesNeeded);
-
-    /// <summary>
-    /// Ghi cấu hình mở rộng. Description KHÔNG đặt được lúc <c>CreateServiceW</c> —
-    /// phải tạo service xong rồi gọi riêng hàm này với
-    /// <c>SERVICE_CONFIG_DESCRIPTION</c>.
-    /// </summary>
-    [DllImport(Dll, CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool ChangeServiceConfig2W(
-        SafeServiceHandle hService, int dwInfoLevel, nint lpInfo);
-
-    [DllImport(Dll, CharSet = CharSet.Unicode, SetLastError = true)]
-    internal static extern SafeServiceHandle CreateServiceW(
-        SafeServiceHandle hSCManager,
-        string lpServiceName,
-        string lpDisplayName,
-        uint dwDesiredAccess,
-        uint dwServiceType,
-        uint dwStartType,
-        uint dwErrorControl,
-        string lpBinaryPathName,
-        string? lpLoadOrderGroup,
-        nint lpdwTagId,
-        string? lpDependencies,
-        string? lpServiceStartName,
-        string? lpPassword);
-
-    [DllImport(Dll, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool DeleteService(SafeServiceHandle hService);
-
-    [DllImport(Dll, CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool ChangeServiceConfigW(
-        SafeServiceHandle hService,
-        uint dwServiceType,
-        uint dwStartType,
-        uint dwErrorControl,
-        string? lpBinaryPathName,
-        string? lpLoadOrderGroup,
-        nint lpdwTagId,
-        string? lpDependencies,
-        string? lpServiceStartName,
-        string? lpPassword,
-        string? lpDisplayName);
-
-    [DllImport(Dll, CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool StartServiceW(
-        SafeServiceHandle hService, uint dwNumServiceArgs, nint lpServiceArgVectors);
-
-    [DllImport(Dll, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool ControlService(
-        SafeServiceHandle hService, uint dwControl, ref SERVICE_STATUS lpServiceStatus);
 
     [DllImport(Dll, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

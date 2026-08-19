@@ -18,11 +18,18 @@ public sealed class MonitorDbContext(DbContextOptions<MonitorDbContext> options)
     /// </summary>
     public DbSet<ServiceConfigSnapshot> ServiceConfigSnapshots => Set<ServiceConfigSnapshot>();
 
+    /// <summary>
+    /// Dấu hiệu đã bị đóng dấu xấu (bước 14). Tách khỏi <c>SuspiciousIndicators</c>
+    /// trong code một cách có chủ đích — xem ghi chú ở <see cref="BlacklistEntry"/>.
+    /// </summary>
+    public DbSet<BlacklistEntry> Blacklist => Set<BlacklistEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ConfigureEvents(modelBuilder);
         ConfigureAlerts(modelBuilder);
         ConfigureServiceConfigSnapshots(modelBuilder);
+        ConfigureBlacklist(modelBuilder);
     }
 
     private static void ConfigureEvents(ModelBuilder modelBuilder)
@@ -156,6 +163,38 @@ public sealed class MonitorDbContext(DbContextOptions<MonitorDbContext> options)
             .IsUnique()
             .HasFilter("\"SourceEventId\" IS NOT NULL")
             .HasDatabaseName("IX_Alerts_Dedup");
+    }
+
+    private static void ConfigureBlacklist(ModelBuilder modelBuilder)
+    {
+        var b = modelBuilder.Entity<BlacklistEntry>();
+
+        b.ToTable("Blacklist");
+        b.HasKey(x => x.Id);
+
+        // Enum luu thanh chu, giong Events/Alerts - xem ghi chu o ConfigureEvents.
+        b.Property(x => x.Kind).HasConversion<string>().HasMaxLength(32).IsRequired();
+        b.Property(x => x.Severity).HasConversion<string>().HasMaxLength(16).IsRequired();
+        b.Property(x => x.Source).HasConversion<string>().HasMaxLength(32).IsRequired();
+
+        // Duong dan day du co the rat dai (co ca tham so neu nguoi dung nhap tay).
+        b.Property(x => x.Value).HasMaxLength(1024).IsRequired();
+        b.Property(x => x.Reason).HasColumnType("text");
+        b.Property(x => x.LearnedFromRuleId).HasMaxLength(64);
+        b.Property(x => x.LearnedFromObjectName).HasMaxLength(512);
+
+        b.Property(x => x.CreatedAt).HasColumnType("timestamp with time zone").IsRequired();
+        b.Property(x => x.LastHitAt).HasColumnType("timestamp with time zone");
+
+        // Chong trung: mot gia tri chi co dung mot dong cho moi loai. Nho index nay
+        // ma tu hoc chay bao nhieu lan cung khong nhan doi - cung co che voi
+        // IX_Alerts_Dedup. Value da duoc chuan hoa ve chu thuong luc ghi
+        // (BlacklistMatcher.Normalize) nen index nay chan duoc ca ban khac hoa/thuong.
+        b.HasIndex(x => new { x.Kind, x.Value })
+            .IsUnique()
+            .HasDatabaseName("IX_Blacklist_Dedup");
+
+        b.HasIndex(x => x.Enabled);
     }
 
     private static void ConfigureServiceConfigSnapshots(ModelBuilder modelBuilder)

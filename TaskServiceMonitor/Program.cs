@@ -52,6 +52,10 @@ builder.Services.AddSingleton(alertingOptions);
 builder.Services.AddScoped<CorrelationRules>();
 builder.Services.AddScoped<AlertEvaluator>();
 
+// Blacklist: SINGLETON vi no giu snapshot trong bo nho - BlacklistMatcher chay tren
+// MOI event nen khong the hoi DB tung lan. Tu cham DB qua IServiceScopeFactory.
+builder.Services.AddSingleton<BlacklistRegistry>();
+
 // Ve doi enum sang chuoi: xem ghi chu o ConfigureHttpJsonOptions ben tren.
 builder.Services.AddSignalR().AddJsonProtocol(o =>
     o.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -71,15 +75,10 @@ builder.Services.AddSingleton<AdHocLogReader>();
 // bat buoc vi ten file den thang tu URL ma app chay quyen Administrator.
 builder.Services.AddSingleton<SavedLogStore>();
 
-// Rao an toan cho thao tac ghi task/service. Doc thi khong gioi han.
-//   SafeNameGuard - duoc phep ghi len TEN nay khong?
-//   InputPolicy   - GIA TRI nhap vao (duong dan exe, tham so...) co hop le khong?
-// Hai lop tra loi hai cau hoi khac nhau, khong thay the nhau duoc.
-var managementOptions = builder.Configuration
-    .GetSection(ManagementOptions.SectionName).Get<ManagementOptions>() ?? new ManagementOptions();
-
-builder.Services.AddSingleton(new SafeNameGuard(managementOptions.WritablePrefix));
-builder.Services.AddSingleton(new InputPolicy(managementOptions));
+// Doc (khong ghi) Task/Service hien co tren may - phuc vu tab Tasks/Services CHI
+// XEM. Mentor xac nhan app chi can MONITORING, khong can tu thao tac Task/Service,
+// nen lop rao SafeNameGuard/InputPolicy (chi ton tai de bao ve thao tac ghi) da bi
+// go bo cung cac method Create/Delete/Start/Stop/... o hai class ben duoi.
 builder.Services.AddSingleton<ServiceManager>();
 builder.Services.AddSingleton<TaskManager>();
 
@@ -113,6 +112,11 @@ if (args.Contains("--backfill") || args.Contains("--rescore"))
 if (args.Contains("--rebuild-alerts"))
 {
     using var scope = app.Services.CreateScope();
+
+    // Nap blacklist truoc: khong nap thi rule BLACKLIST_HIT khong bao gio khop luc
+    // dung lai bang canh bao, va con so do duong tinh gia se thieu mat mot rule.
+    await app.Services.GetRequiredService<BlacklistRegistry>().ReloadAsync();
+
     return await AlertRebuildTool.RunAsync(
         scope.ServiceProvider.GetRequiredService<MonitorDbContext>(),
         scope.ServiceProvider.GetRequiredService<AlertEvaluator>());
@@ -133,9 +137,15 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.MapEventEndpoints();
 app.MapAlertEndpoints();
+app.MapBlacklistEndpoints();
 app.MapManagementEndpoints();
 app.MapLogBrowseEndpoints();
 app.MapHub<MonitorHub>(MonitorHub.Route);
+
+// Nap blacklist vao bo nho TRUOC khi nhan event dau tien - BlacklistMatcher doc
+// snapshot nay tren moi event. Khong await duoc o day (Program la top-level statement
+// dong bo toi diem nay) nen chay dong bo mot lan, chi vai chuc dong.
+await app.Services.GetRequiredService<BlacklistRegistry>().ReloadAsync();
 
 app.Run();
 return 0;

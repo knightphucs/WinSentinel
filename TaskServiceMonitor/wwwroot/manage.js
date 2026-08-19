@@ -1,8 +1,10 @@
 "use strict";
 
-// Tab Scheduled Tasks + Services: liet ke, loc, va thao tac - giong Task Scheduler
-// va services.msc. Moi thao tac ghi deu sinh event Windows that; feed cuoi moi tab
-// hien ngay event vua sinh ra de khoi phai chuyen sang tab Dashboard.
+// Tab Scheduled Tasks + Services: liet ke va loc CHI DE XEM - giong Task Scheduler
+// va services.msc nhung khong co nut thao tac. App chi giam sat log/event, khong tu
+// tao/sua/xoa/bat/tat Task/Service nua (yeu cau cua mentor). Feed cuoi moi tab van
+// hien event Windows that lien quan toi loai doi tuong do (4698-4702, 7040, 7045…) -
+// nhung event nay co the do nguoi/tien trinh KHAC tren may sinh ra, van dang giam sat.
 
 /* ⚠️ BẮT BUỘC bọc trong IIFE — đừng gỡ ra.
  *
@@ -21,7 +23,7 @@
 
 const FEED_LIMIT = 15;
 
-let systemStatus = { isElevated: false, writablePrefix: "WinSentinel" };
+let systemStatus = { isElevated: false };
 let allTasks = [];
 let allServices = [];
 
@@ -37,7 +39,6 @@ const mg = {
   tasksSearch: $("tasks-search"),
   tasksState: $("tasks-filter-state"),
   tasksAction: $("tasks-filter-action"),
-  tasksOnlyWritable: $("tasks-only-writable"),
   tasksSort: $("tasks-sort"),
   tasksFeed: $("tasks-feed"),
 
@@ -47,7 +48,6 @@ const mg = {
   servicesSearch: $("services-search"),
   servicesState: $("services-filter-state"),
   servicesStartType: $("services-filter-starttype"),
-  servicesOnlyWritable: $("services-only-writable"),
   servicesSort: $("services-sort"),
   servicesFeed: $("services-feed"),
 };
@@ -103,16 +103,6 @@ async function callApi(url, options) {
   return body;
 }
 
-async function runAction(fn, onDone) {
-  try {
-    const result = await fn();
-    showToast(result?.message ?? "Xong.", true);
-    if (onDone) await onDone();
-  } catch (err) {
-    showToast(err.message, false);
-  }
-}
-
 function textCell(value) {
   const td = document.createElement("td");
   if (value === null || value === undefined || value === "") {
@@ -122,32 +112,6 @@ function textCell(value) {
     td.textContent = value;
   }
   return td;
-}
-
-function actionButton(label, danger, onClick, blocked) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "btn" + (danger ? " btn--danger" : "");
-  btn.textContent = label;
-
-  if (blocked) {
-    btn.disabled = true;
-    btn.title = blocked;
-  } else {
-    btn.addEventListener("click", onClick);
-  }
-  return btn;
-}
-
-/** Vi sao dong nay khong thao tac duoc. null = duoc phep. */
-function blockedReason(isWritable) {
-  if (!systemStatus.isElevated) {
-    return "Cần chạy app bằng quyền Administrator.";
-  }
-  if (!isWritable) {
-    return `Rào an toàn: chỉ thao tác được đối tượng có tên bắt đầu bằng "${systemStatus.writablePrefix}".`;
-  }
-  return null;
 }
 
 function formatDate(value) {
@@ -230,8 +194,6 @@ function taskPasses(t) {
   const action = mg.tasksAction.value;
   if (action && t.actionType !== action) return false;
 
-  if (mg.tasksOnlyWritable.checked && !t.isWritable) return false;
-
   return true;
 }
 
@@ -248,15 +210,9 @@ function renderTasks() {
 
   for (const t of visible) {
     const tr = document.createElement("tr");
-    if (!t.isWritable) tr.className = "is-readonly";
-    const blocked = blockedReason(t.isWritable);
 
-    // Bam vao dong (tru vung nut "Thao tac") -> hien thong tin, giong bam vao
-    // mot dong event o tab Dashboard.
-    tr.addEventListener("click", (e) => {
-      if (e.target.closest(".actions")) return;
-      openTaskDetail(t);
-    });
+    // Bam vao dong -> hien thong tin, giong bam vao mot dong event o tab Dashboard.
+    tr.addEventListener("click", () => openTaskDetail(t));
 
     tr.appendChild(textCell(t.name));
     tr.appendChild(textCell(t.path));
@@ -264,264 +220,17 @@ function renderTasks() {
     tr.appendChild(textCell(t.actionType === "ComHandler" ? "ComHandler (COM)" : t.command));
     tr.appendChild(textCell(formatDate(t.lastRunTime)));
 
-    const actions = document.createElement("td");
-    actions.className = "actions";
-
-    // Xem XML dung duoc cho MOI task, ke ca task he thong - chi la doc.
-    // Nhay thang vao tab "Chi tiet" cua modal chung (openTaskDetail).
-    actions.appendChild(actionButton("XML", false, () => openTaskDetail(t, "details"), null));
-
-    actions.appendChild(actionButton(t.enabled ? "Tắt" : "Bật", false,
-      () => runAction(
-        () => callApi(`/api/tasks/${encodeURIComponent(t.name)}/${t.enabled ? "disable" : "enable"}`,
-          { method: "POST" }),
-        loadTasks),
-      blocked));
-
-    actions.appendChild(actionButton("Chạy", false,
-      () => runAction(
-        () => callApi(`/api/tasks/${encodeURIComponent(t.name)}/run`, { method: "POST" }),
-        loadTasks),
-      blocked));
-
-    actions.appendChild(actionButton("Sửa lệnh", false, () => editTask(t), blocked));
-
-    actions.appendChild(actionButton("Xoá", true,
-      () => runAction(
-        () => callApi(`/api/tasks?name=${encodeURIComponent(t.name)}`, { method: "DELETE" }),
-        loadTasks),
-      blocked));
-
-    tr.appendChild(actions);
     mg.tasksBody.appendChild(tr);
   }
 
-  const writable = allTasks.filter((t) => t.isWritable).length;
-  mg.tasksCount.textContent =
-    `${visible.length} / ${allTasks.length} task (${writable} thao tác được)`;
+  mg.tasksCount.textContent = `${visible.length} / ${allTasks.length} task`;
 }
 
-// ---------------------------------------------------------------- Hop thoai Create Task
-
-let taskDialog = null;
-
-function ensureTaskDialog() {
-  if (taskDialog) return taskDialog;
-
-  taskDialog = window.buildTaskDialog();
-  taskDialog.close.addEventListener("click", closeTaskDialog);
-  taskDialog.submit.addEventListener("click", submitTaskDialog);
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !taskDialog.root.hidden) closeTaskDialog();
-  });
-
-  return taskDialog;
+async function fetchTaskXml(path) {
+  const res = await fetch(`/api/tasks/xml?path=${encodeURIComponent(path)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
 }
-
-function closeTaskDialog() {
-  if (taskDialog) taskDialog.root.hidden = true;
-}
-
-function $d(id) {
-  return document.getElementById(id);
-}
-
-/**
- * Mo hop thoai. `detail` la ban day du tu /api/tasks/detail - truyen vao khi SUA de
- * nap lai dung dinh nghia dang co.
- *
- * QUAN TRONG: POST la GHI DE TOAN BO, nen khong nap lai thi bam "Cap nhat" se xoa sach
- * arguments va doi trigger - dung loi da co truoc buoc 10.
- */
-function openTaskDialog(detail) {
-  const d = ensureTaskDialog();
-  d.root.hidden = false;
-  d.showTab("general");
-  d.status.textContent = "";
-
-  const editing = Boolean(detail);
-  d.title.textContent = editing ? `Sửa task — ${detail.name}` : "Create Task";
-
-  $d("td-name").value = detail?.name ?? "";
-  $d("td-name").readOnly = editing;
-  $d("td-author").value = detail?.author ?? "";
-  $d("td-description").value = detail?.description ?? "";
-  $d("td-hidden").checked = Boolean(detail?.hidden);
-  $d("td-userid").value = detail?.userId ?? "";
-  $d("td-groupid").value = detail?.groupId ?? "";
-  $d("td-logontype").value = detail?.logonType ?? "InteractiveToken";
-  $d("td-runlevel").value = detail?.runLevel ?? "LeastPrivilege";
-
-  d.triggerList.replaceChildren();
-  for (const t of detail?.triggers ?? []) {
-    d.triggerList.appendChild(window.taskDialogRows.triggerRow(t));
-  }
-  if (d.triggerList.children.length === 0) {
-    d.triggerList.appendChild(window.taskDialogRows.triggerRow());
-  }
-
-  d.actionList.replaceChildren();
-  for (const a of detail?.actions ?? []) {
-    d.actionList.appendChild(window.taskDialogRows.actionRow(a));
-  }
-  if (d.actionList.children.length === 0) {
-    d.actionList.appendChild(window.taskDialogRows.actionRow(
-      { command: "C:\\Windows\\System32\\cmd.exe", arguments: "/c echo hello" }));
-  }
-}
-
-function collectTaskDialog() {
-  const d = ensureTaskDialog();
-
-  const triggers = [...d.triggerList.children].map((row) => ({
-    type: row.querySelector('[data-role="trigger-type"]').value,
-    startBoundary: row.querySelector('[data-role="trigger-start"]').value || null,
-    enabled: row.querySelector('[data-role="trigger-enabled"]').checked,
-  }));
-
-  const actions = [...d.actionList.children]
-    .map((row) => ({
-      type: "Exec",
-      command: row.querySelector('[data-role="action-command"]').value.trim(),
-      arguments: row.querySelector('[data-role="action-arguments"]').value.trim() || null,
-      workingDirectory: row.querySelector('[data-role="action-workdir"]').value.trim() || null,
-    }))
-    .filter((a) => a.command);
-
-  return {
-    name: $d("td-name").value.trim(),
-    author: $d("td-author").value.trim() || null,
-    description: $d("td-description").value.trim() || null,
-    hidden: $d("td-hidden").checked,
-    userId: $d("td-userid").value.trim() || null,
-    groupId: $d("td-groupid").value.trim() || null,
-    logonType: $d("td-logontype").value,
-    runLevel: $d("td-runlevel").value,
-    allowStartOnDemand: $d("td-allowdemand").checked,
-    stopIfGoingOnBatteries: $d("td-battery").checked,
-    multipleInstancesPolicy: $d("td-instances").value,
-    executionTimeLimit: $d("td-timelimit").value.trim() || null,
-    triggers,
-    actions,
-  };
-}
-
-async function submitTaskDialog() {
-  const d = ensureTaskDialog();
-  const body = collectTaskDialog();
-
-  if (!body.name) {
-    d.status.textContent = "Chưa nhập tên task.";
-    return;
-  }
-  if (body.actions.length === 0) {
-    d.status.textContent = "Cần ít nhất một action có chương trình.";
-    return;
-  }
-
-  d.submit.disabled = true;
-  d.status.textContent = "Đang gửi…";
-
-  try {
-    const result = await callApi(`/api/tasks/full?api=${d.apiMode.value}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    showToast(result?.message ?? "Đã ghi task.", true);
-    d.status.textContent = "";
-    closeTaskDialog();
-    await loadTasks();
-  } catch (err) {
-    // Giu hop thoai mo de sua lai, chi bao loi tai cho.
-    d.status.textContent = err.message;
-    showToast(err.message, false);
-  } finally {
-    d.submit.disabled = false;
-  }
-}
-
-/** Nut "Sửa": nap dinh nghia hien co roi mo hop thoai. */
-async function editTask(t) {
-  try {
-    const res = await fetch(`/api/tasks/detail?path=${encodeURIComponent(t.path)}`);
-    openTaskDialog(res.ok ? await res.json() : { name: t.name });
-  } catch {
-    openTaskDialog({ name: t.name });
-  }
-}
-
-document.getElementById("task-dialog-open")
-  ?.addEventListener("click", () => openTaskDialog(null));
-
-// ---------------------------------------------------------------- Hop thoai Service
-
-let serviceDialog = null;
-
-function ensureServiceDialog() {
-  if (serviceDialog) return serviceDialog;
-
-  serviceDialog = window.buildServiceDialog();
-  serviceDialog.close.addEventListener("click", () => { serviceDialog.root.hidden = true; });
-  serviceDialog.submit.addEventListener("click", submitServiceDialog);
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !serviceDialog.root.hidden) serviceDialog.root.hidden = true;
-  });
-
-  return serviceDialog;
-}
-
-async function submitServiceDialog() {
-  const d = ensureServiceDialog();
-
-  const body = {
-    name: $d("sd-name").value.trim(),
-    displayName: $d("sd-displayname").value.trim() || null,
-    binaryPath: $d("sd-binarypath").value.trim(),
-    description: $d("sd-description").value.trim() || null,
-    startType: $d("sd-starttype").value,
-    dependencies: $d("sd-dependencies").value
-      .split(",").map((s) => s.trim()).filter(Boolean),
-    account: $d("sd-account").value,
-  };
-
-  if (!body.name || !body.binaryPath) {
-    d.status.textContent = "Cần nhập tên service và đường dẫn binary.";
-    return;
-  }
-
-  d.submit.disabled = true;
-  d.status.textContent = "Đang gửi…";
-
-  try {
-    const result = await callApi("/api/services", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    showToast(result?.message ?? "Đã tạo service.", true);
-    d.status.textContent = "";
-    d.root.hidden = true;
-    await loadServices();
-  } catch (err) {
-    // Giu hop thoai mo de sua lai.
-    d.status.textContent = err.message;
-    showToast(err.message, false);
-  } finally {
-    d.submit.disabled = false;
-  }
-}
-
-document.getElementById("service-dialog-open")?.addEventListener("click", () => {
-  const d = ensureServiceDialog();
-  d.root.hidden = false;
-  d.showTab("general");
-  d.status.textContent = "";
-});
 
 /**
  * Event gan nhat cua MOT doi tuong. latestByObject chi co thoi diem, khong co Event ID
@@ -558,7 +267,6 @@ function taskDetailRows(t) {
     ["Lệnh", t.command ?? "—"],
     ["Lần chạy cuối", formatDate(t.lastRunTime) ?? "—"],
     ["Lần chạy kế tiếp", formatDate(t.nextRunTime) ?? "—"],
-    ["Thao tác được", t.isWritable ? "Có" : `Không — ngoài rào an toàn (tiền tố "${systemStatus.writablePrefix}")`],
   ];
 }
 
@@ -592,10 +300,9 @@ function taskDetailExtraRows(d) {
 /**
  * Modal thong tin dung chung voi tab Dashboard: tab "Tong quan" la cac field
  * cua task (khong phai cua mot event), tab "Chi tiet" la XML dinh nghia task
- * (thay cho RawXml vi task khong phai la mot event). `initialTab` cho nut
- * "XML" nhay thang vao tab do thay vi luon mo "Tong quan" truoc.
+ * (thay cho RawXml vi task khong phai la mot event).
  */
-async function openTaskDetail(t, initialTab) {
+async function openTaskDetail(t) {
   const modal = $("modal");
   $("modal-title").textContent = `Task — ${t.name}`;
 
@@ -605,12 +312,9 @@ async function openTaskDetail(t, initialTab) {
   $("modal-xml").textContent = "Đang tải…";
   modal.hidden = false;
   window.resetModalTabs();
-  if (initialTab === "details") window.setModalTab("details");
-
-  const path = encodeURIComponent(t.path);
 
   const detail = Promise.all([
-    fetch(`/api/tasks/detail?path=${path}`).then((res) => (res.ok ? res.json() : null)),
+    fetch(`/api/tasks/detail?path=${encodeURIComponent(t.path)}`).then((res) => (res.ok ? res.json() : null)),
     fetchLatestEvent("ScheduledTask", t.path),
   ])
     .then(([d, evt]) => {
@@ -622,11 +326,8 @@ async function openTaskDetail(t, initialTab) {
     })
     .catch((err) => console.error("Khong lay duoc chi tiet task:", err));
 
-  const xml = fetch(`/api/tasks/xml?path=${path}`)
-    .then(async (res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      $("modal-xml").textContent = await res.text();
-    })
+  const xml = fetchTaskXml(t.path)
+    .then((text) => { $("modal-xml").textContent = text; })
     .catch((err) => {
       $("modal-xml").textContent = "Không đọc được XML: " + err.message;
     });
@@ -642,7 +343,6 @@ function serviceDetailRows(s) {
     ["Start type", s.startType],
     ["Binary", s.imagePath],
     ["Tài khoản chạy", s.account ?? "—"],
-    ["Thao tác được", s.isWritable ? "Có" : `Không — ngoài rào an toàn (tiền tố "${systemStatus.writablePrefix}")`],
   ];
 }
 
@@ -698,8 +398,7 @@ async function loadTasks() {
     allTasks = tasks;
     taskLatest = latest;
     renderTasks();
-    // Cot cuoi la "Thao tac" (nut bam) - khong can keo.
-    makeColumnsResizable($("tasks-table"), "tasks", { resizeLast: false });
+    makeColumnsResizable($("tasks-table"), "tasks");
   } catch (err) {
     showToast("Không tải được danh sách task: " + err.message, false);
   }
@@ -719,8 +418,6 @@ function servicePasses(s) {
   const startType = mg.servicesStartType.value;
   if (startType && s.startType !== startType) return false;
 
-  if (mg.servicesOnlyWritable.checked && !s.isWritable) return false;
-
   return true;
 }
 
@@ -733,13 +430,8 @@ function renderServices() {
 
   for (const s of visible) {
     const tr = document.createElement("tr");
-    if (!s.isWritable) tr.className = "is-readonly";
-    const blocked = blockedReason(s.isWritable);
 
-    tr.addEventListener("click", (e) => {
-      if (e.target.closest(".actions")) return;
-      openServiceDetail(s);
-    });
+    tr.addEventListener("click", () => openServiceDetail(s));
 
     tr.appendChild(textCell(s.name));
     tr.appendChild(textCell(s.displayName));
@@ -747,36 +439,10 @@ function renderServices() {
     tr.appendChild(textCell(s.startType));
     tr.appendChild(textCell(s.imagePath));
 
-    const actions = document.createElement("td");
-    actions.className = "actions";
-
-    actions.appendChild(actionButton("Start", false,
-      () => runAction(() => callApi(`/api/services/${encodeURIComponent(s.name)}/start`,
-        { method: "POST" }), loadServices), blocked));
-
-    actions.appendChild(actionButton("Stop", false,
-      () => runAction(() => callApi(`/api/services/${encodeURIComponent(s.name)}/stop`,
-        { method: "POST" }), loadServices), blocked));
-
-    const nextType = s.startType === "auto start" ? "demand start" : "auto start";
-    actions.appendChild(actionButton(`→ ${nextType}`, false,
-      () => runAction(() => callApi(`/api/services/${encodeURIComponent(s.name)}/starttype`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startType: nextType }),
-      }), loadServices), blocked));
-
-    actions.appendChild(actionButton("Xoá", true,
-      () => runAction(() => callApi(`/api/services?name=${encodeURIComponent(s.name)}`,
-        { method: "DELETE" }), loadServices), blocked));
-
-    tr.appendChild(actions);
     mg.servicesBody.appendChild(tr);
   }
 
-  const writable = allServices.filter((s) => s.isWritable).length;
-  mg.servicesCount.textContent =
-    `${visible.length} / ${allServices.length} service (${writable} thao tác được)`;
+  mg.servicesCount.textContent = `${visible.length} / ${allServices.length} service`;
 }
 
 async function loadServices() {
@@ -788,8 +454,7 @@ async function loadServices() {
     allServices = services;
     serviceLatest = latest;
     renderServices();
-    // Cot cuoi la "Thao tac" (nut bam) - khong can keo.
-    makeColumnsResizable($("services-table"), "services", { resizeLast: false });
+    makeColumnsResizable($("services-table"), "services");
   } catch (err) {
     showToast("Không tải được danh sách service: " + err.message, false);
   }
@@ -797,14 +462,10 @@ async function loadServices() {
 
 // ---------------------------------------------------------------- Su kien UI
 
-// Form tao nam san trong trang da bo - viec tao/sua chuyen het sang hop thoai
-// modeless (openTaskDialog / ensureServiceDialog o tren). Giu hai duong nhap lieu
-// cho cung mot viec chi lam nguoi dung phan van dung cai nao.
-
-for (const control of [mg.tasksSearch, mg.tasksState, mg.tasksAction, mg.tasksOnlyWritable, mg.tasksSort]) {
+for (const control of [mg.tasksSearch, mg.tasksState, mg.tasksAction, mg.tasksSort]) {
   control.addEventListener("input", renderTasks);
 }
-for (const control of [mg.servicesSearch, mg.servicesState, mg.servicesStartType, mg.servicesOnlyWritable, mg.servicesSort]) {
+for (const control of [mg.servicesSearch, mg.servicesState, mg.servicesStartType, mg.servicesSort]) {
   control.addEventListener("input", renderServices);
 }
 
@@ -822,7 +483,8 @@ async function loadSystemStatus() {
 
   if (!systemStatus.isElevated) {
     mg.elevation.hidden = false;
-    mg.elevation.textContent = "Không chạy quyền Administrator — thao tác ghi bị khoá";
+    mg.elevation.textContent =
+      "Không chạy quyền Administrator — channel Security (event Task 4698-4702) sẽ không đọc được";
   }
 }
 

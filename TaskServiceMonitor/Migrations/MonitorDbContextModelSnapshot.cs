@@ -101,6 +101,66 @@ namespace TaskServiceMonitor.Migrations
                     b.ToTable("Alerts", (string)null);
                 });
 
+            modelBuilder.Entity("TaskServiceMonitor.Models.BlacklistEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("HitCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("LastHitAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LearnedFromObjectName")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("LearnedFromRuleId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Enabled");
+
+                    b.HasIndex("Kind", "Value")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Blacklist_Dedup");
+
+                    b.ToTable("Blacklist", (string)null);
+                });
+
             modelBuilder.Entity("TaskServiceMonitor.Models.ServiceConfigSnapshot", b =>
                 {
                     b.Property<string>("Hostname")

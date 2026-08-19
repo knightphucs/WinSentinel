@@ -520,6 +520,153 @@ quy ước id: `#<prefix>-preset`, `#<prefix>-custom`, `#<prefix>-from`, `#<pref
 - `.rules-panel` phải có **cả** `margin-bottom`: `.table-wrap` ngay dưới không có
   `margin-top` riêng, thiếu là hai khối viền dính sát nhau, trông như một bảng bị vỡ đôi.
 
+## Bước 13 — Gỡ bỏ tính năng quản lý (theo yêu cầu mentor: chỉ monitoring)
+
+Mentor nhận xét app đã ổn nhưng **không cần** tự thao tác Task/Service (tạo/sửa/xoá/
+bật-tắt/start-stop/đổi start type) — đây chỉ là ứng dụng **monitoring**, lấy event &
+log từ Windows và theo dõi hành vi, không phải công cụ quản trị. Đã gỡ toàn bộ đường
+GHI, giữ lại đường ĐỌC (liệt kê/xem chi tiết Task/Service hiện có, để đối chiếu với
+log) vì nó vẫn phục vụ mục tiêu monitoring.
+
+**Đã xoá hẳn:**
+- `Management/SafeNameGuard.cs`, `Management/InputPolicy.cs`,
+  `Management/TaskDefinitionRequest.cs` — toàn bộ rào an toàn (whitelist tên/đường
+  dẫn/tài khoản) chỉ tồn tại để bảo vệ các thao tác ghi đã bị gỡ, nên bản thân chúng
+  cũng không còn lý do tồn tại.
+- `wwwroot/taskdialog.js` — hộp thoại "Create Task" 5 tab và "Tạo Service".
+- Test tương ứng: `InputPolicyTests.cs`, `SafeNameGuardTests.cs`, `BuildTaskXmlTests.cs`
+  (68 test). `ManagementDescribeTests.cs` **giữ nguyên** — chỉ test phần map mã
+  số→chữ thuộc đường đọc (`DescribeActionType`, `DescribeRunLevel`, `ReadMultiSz`…).
+
+**Đã cắt khỏi các file còn lại** (không xoá cả file vì vẫn cần phần đọc):
+- `Management/ServiceManager.cs`: bỏ `Create`/`SetDescription`/`Delete`/`Start`/
+  `Stop`/`ChangeStartType`/`ParseStartType`. Giữ `List`/`Detail` và toàn bộ hàm
+  `TryReadConfig`/`ReadConfig2`/`ReadMultiSz`/`Describe*`.
+- `Management/TaskManager.cs`: bỏ `CreateOrUpdate`/`CreateViaObjectModel`/`Delete`/
+  `SetEnabled`/`RunNow`/`Validate`/`BuildTaskXml` (+ `BuildTrigger`/`BuildAction`).
+  Giữ `List`/`Detail`/`GetXml` — `GetXml` chỉ đọc `task.Xml`, không phải thao tác ghi.
+- `Management/Native/AdvApi32.cs`: bỏ khai báo P/Invoke `CreateServiceW`/
+  `DeleteService`/`ChangeServiceConfigW`/`ChangeServiceConfig2W`/`StartServiceW`/
+  `ControlService` và struct `SERVICE_STATUS` (chỉ dùng cho `ControlService`). Giữ
+  nguyên các hàm/struct đọc (`EnumServicesStatusExW`, `QueryServiceConfigW`,
+  `QueryServiceConfig2W`, `QueryServiceStatusEx`…).
+- `Api/ManagementEndpoints.cs`: bỏ mọi `MapPost`/`MapDelete` (create/update/delete/
+  enable/disable/run task; create/delete/start/stop/starttype service) và 3 record
+  request (`CreateTaskRequest`, `CreateServiceRequest`, `ChangeStartTypeRequest`).
+  Bỏ `RequireElevation`/`RequireField`/`NotElevatedException` (chỉ phục vụ endpoint
+  ghi). Giữ nguyên các `MapGet` (`/api/system/*`, `/api/tasks`, `/api/tasks/xml`,
+  `/api/tasks/detail`, `/api/services`, `/api/services/{name}`).
+- Field `IsWritable`/`isWritable` xoá khỏi `ServiceInfo`/`ServiceDetail`/`TaskInfo`/
+  `TaskDetail` (C#) và mọi chỗ dùng ở `manage.js`/`insight.js` — không còn ý nghĩa
+  khi không có thao tác ghi nào để "được phép" hay "bị chặn".
+- `appsettings.json`: xoá section `Management` (`WritablePrefix`,
+  `AllowedExecutableDirectories`, `AllowedExecutables`…) và comment đi kèm.
+- `wwwroot/index.html`/`manage.js`: bỏ nút "Tạo task mới…"/"Tạo Service…", cột
+  "Thao tác" (Bật/Tắt/Chạy/Sửa lệnh/Xoá/Start/Stop/đổi start type/Xoá), checkbox
+  "Chỉ hiện cái thao tác được", script `taskdialog.js`. **Giữ nguyên**: bảng liệt kê,
+  bộ lọc, sắp xếp theo "mới nhất", modal chi tiết (bấm vào dòng để xem — kể cả tab
+  XML của task), và feed "event vừa sinh ra" theo từng tab (vẫn hữu ích vì event
+  Task/Service có thể do người/tiến trình khác trên máy sinh ra, đúng tinh thần
+  monitoring).
+
+**Không đổi**: `ElevationInfo` (vẫn cần biết app có chạy Administrator không, để đọc
+được channel `Security`), toàn bộ tầng Detection/Alert/Realtime/Dashboard, và 4 panel
+log. Chỉ 2 tab "Tasks"/"Services" đổi từ *quản trị* sang *chỉ xem*.
+
+Sau khi gỡ: `dotnet build` 0 warning/0 error, `dotnet test` **237/237 pass** (giảm từ
+305 do bỏ 68 test của 3 lớp rào ghi).
+
+## Bước 14 — Blacklist tự học + siết detect lệnh/binary
+
+Mentor giao: theo dõi kỹ hơn *các lần thực thi bất thường*, đóng dấu dấu hiệu vào
+**blacklist**, rồi alert thẳng lên dashboard. **Đọc
+[docs/hanh-vi-mapping.md](docs/hanh-vi-mapping.md) mục 4.4.**
+
+### Ba lỗ hổng đã vá (rà lại toàn bộ 10 yêu cầu của mentor)
+
+- **`cmd /c` và `powershell.exe` trước đây KHÔNG có rule nào bắt** — hai chuỗi này chỉ
+  xuất hiện trong *comment*, chưa từng nằm trong mảng dấu hiệu nào. Nay có
+  `SuspiciousIndicators.MatchContextualShell`, **xét theo ngữ cảnh** (4 loại: thư mục
+  ghi được / http-UNC / cờ đáng ngờ / nối lệnh `&&`), cùng lý do với `rundll32`.
+- **Phía Service KHÔNG có phân tích lệnh** (Task có 3 rule) → rule mới
+  `SERVICE_SUSPICIOUS_COMMAND` đọc **cả dòng lệnh** trong `ImagePath`. Bắt được ca mà
+  `SERVICE_NONSTANDARD_PATH` im lặng hoàn toàn: service trỏ `System32\cmd.exe /c
+  powershell -enc …` (đường dẫn hoàn toàn chuẩn).
+- **Không phân biệt "khai báo" với "đã thực thi"** → `RuleCatalog.Context()` thêm tiền
+  tố `⚡ ĐÃ THỰC THI` cho event 200/201. 4698 mới là *đăng ký*, 200/201 là *chạy thật*.
+
+### Blacklist: hai lớp, CỐ Ý không gộp
+
+`SuspiciousIndicators` giữ dấu hiệu **tổng quát** (hardcode, có test trên 14 fixture
+thật). `Blacklist` (bảng DB) giữ **giá trị cụ thể đã gặp trên máy này** — sửa được lúc
+đang chạy, đếm được số lần khớp, tự học được. **Không seed blacklist bằng nội dung
+`SuspiciousIndicators`** — làm vậy là hai nguồn sự thật cho cùng một thứ.
+
+- `BlacklistMatcher` là **hàm thuần** (nhận sẵn danh sách) → test không cần DB, và chạy
+  được trong hot path. `BlacklistRegistry` là **singleton** giữ snapshot trong RAM,
+  chạm DB qua `IServiceScopeFactory` — matcher chạy trên MỌI event nên không thể hỏi DB
+  từng lần.
+- Đường dẫn so **BẰNG NHAU**, chỉ `CommandFragment` mới dùng `Contains`. Dùng `Contains`
+  cho đường dẫn thì `c:\a.exe` khớp luôn `c:\a.exe.bak`.
+- `BlacklistMatcher.Normalize` phải dùng chung cho **cả lúc ghi lẫn lúc so** — lệch là
+  dòng ghi bằng chữ hoa không bao giờ khớp, trông như tính năng hỏng. Có test riêng.
+- Một event khớp nhiều dòng → **CHỈ một** cảnh báo (gộp bằng chứng), vì
+  `IX_Alerts_Dedup` là `(SourceEventId, RuleId)`.
+
+### 🪤 Ba bug thật do test bắt được — đừng sửa ngược lại
+
+**0. `ExtractExecutable` cắt tại dấu cách đầu tiên là SAI** (bug **có sẵn từ trước**,
+ảnh hưởng rộng nhất). Đường dẫn KHÔNG có nháy mà chứa khoảng trắng — dạng cực phổ biến
+vì `Program Files` có dấu cách — bị cắt cụt:
+
+```
+C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe
+  → "C:\Program"  → tên file thành "program"
+```
+
+Hậu quả đo được: `MicrosoftEdgeUpdate.exe` xuất hiện **8 lần trong 200 event gần nhất**
+mà blacklist khớp **0 dòng**. Rộng hơn: `MatchLivingOffTheLandBinary` bỏ sót **mọi**
+LOLBin nằm trong thư mục có dấu cách.
+
+Nay tìm ranh giới theo **đuôi file** (`ExecutableBoundary` regex) thay vì theo dấu cách.
+Dùng `.*?` không tham nên `cmd.exe /c C:\a\b.exe` vẫn ra `cmd.exe` — đúng, vì thứ được
+CHẠY là cmd.exe. Không khớp đuôi nào (ComHandler `"OneSettings Refresh Cache Task
+Handler"`) thì quay về cách cũ.
+
+⚠️ `wwwroot/blacklistmark.js` có bản mirror (`EXE_BOUNDARY`) — **sửa một bên phải sửa
+bên kia**. Đo lại sau khi sửa: `--rebuild-alerts` trên 1.947 event → **0 cảnh báo mới**,
+tức là chính xác hơn mà không thêm nhiễu.
+
+**1. `IsInStandardSystemDirectory` so trên bản ĐÃ BÓC EXE là SAI.**
+`ExtractExecutable` cắt tại dấu cách đầu tiên khi không có nháy, nên
+`C:\Program Files\App\svc.exe` thành `C:\Program` → không khớp tiền tố
+`C:\Program Files\` nữa. Hậu quả: `SERVICE_NONSTANDARD_PATH` báo nhầm mọi service ở
+Program Files ghi không nháy, **và** `BlacklistLearner` mất rào quan trọng nhất.
+Nay so **cả bản chưa bóc** (bản đúng — phép so tiền tố không cần biết tên exe kết thúc
+ở đâu) lẫn bản đã bóc. Đây là bug **có sẵn từ trước bước 14**.
+
+**2. `BlacklistLearner.FromHit` phải xét rào TRÊN CHUỖI GỐC TRƯỚC, rồi mới bóc exe.**
+Bản đầu bóc trước → xét `C:\Program` (đã cắt) → lọt rào → học ra giá trị rác
+`c:\program` cho một binary hợp lệ. Nay `LearnableFrom` kiểm tra **hai lần**: bản gốc
+(bắt Program Files) và bản đã bóc (bắt chuỗi có tham số).
+
+### ⚠️ Số đo thật: `TASK_WRITABLE_DIR` KHÔNG được dạy blacklist
+
+Lần `--rebuild-alerts` đầu trên **1.807 event thật**: rule đó dạy 2 đường dẫn, **cả hai
+là OneDrive của Microsoft**, chiếm **17/19** cảnh báo `BLACKLIST_HIT`. `%LOCALAPPDATA%`
+chính là nơi phần mềm per-user hợp lệ cài (OneDrive, Teams, Chrome, VS Code).
+
+**Vị trí đủ để cảnh báo, không đủ để kết án vĩnh viễn.** Bỏ khỏi `TeachingRules` →
+`BLACKLIST_HIT` **19 → 2**, hai dòng còn lại là dương tính thật.
+`SERVICE_NONSTANDARD_PATH` thì GIỮ: service chạy từ AppData bất thường hơn hẳn task
+(phạm vi toàn máy, cần quyền admin mới cài). Có 2 test khoá lại, nới mà không đo là đổ.
+
+`SERVICE_SUSPICIOUS_COMMAND` và nhánh shell mới: **0 cảnh báo** trên 1.807 event thật —
+không sinh dương tính giả nào.
+
+`dotnet test` **283/283 pass**. Migration `AddBlacklist` là `CreateTable` (bảng mới)
+nên **không dính** bẫy `defaultValue: ""` của cột enum-as-string.
+
 ## Ghi chú kiến trúc bước 4-5
 
 - **Broadcast SignalR nằm ở `EventPersistenceService`, KHÔNG phải
