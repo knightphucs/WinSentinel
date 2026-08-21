@@ -779,11 +779,22 @@ function addEvent(evt) {
   window.eventBus.publish(evt);
 }
 
-/** Nap san du lieu da co trong DB de mo trang ra la thay ngay, khong cho event moi. */
+/**
+ * Nap san du lieu da co trong DB de mo trang ra la thay ngay, khong cho event moi.
+ *
+ * Ba filter host/type/risk truoc day CHI loc tren mang `events` da co san o client
+ * (toi da MAX_EVENTS=200, moi nhat truoc), nen chon "High" se chi tim trong 200 event
+ * gan day nhat CUA MOI muc rui ro - High tu vai ngay truoc bi 200 event Low/Medium moi
+ * hon de len, khong tai nao loc ra duoc du server con luu. Nay gui thang len server
+ * giong cach dashboardTime da lam, doi cau hoi thay vi loc lai cau tra loi cu.
+ */
 async function loadInitial() {
   try {
     const params = new URLSearchParams({ take: String(MAX_EVENTS) });
     dashboardTime.applyTo(params);
+    if (el.filterHost.value) params.set("host", el.filterHost.value);
+    if (el.filterType.value) params.set("type", el.filterType.value);
+    if (el.filterRisk.value) params.set("risk", el.filterRisk.value);
 
     const res = await fetch(`/api/events?${params}`);
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -824,9 +835,10 @@ async function connectRealtime() {
   }
 }
 
-el.filterHost.addEventListener("change", () => render());
-el.filterType.addEventListener("change", () => render());
-el.filterRisk.addEventListener("change", () => render());
+// Ca ba goi lai server (xem ghi chu o loadInitial) thay vi loc lai mang dang co.
+el.filterHost.addEventListener("change", () => loadInitial());
+el.filterType.addEventListener("change", () => loadInitial());
+el.filterRisk.addEventListener("change", () => loadInitial());
 
 // ---------------------------------------------------------------- Tabs
 

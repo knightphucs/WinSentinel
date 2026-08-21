@@ -448,9 +448,15 @@ h1 {
   color: var(--text-muted);
 }
 
-.create-form input,
+/* :not([type=checkbox]) - khong thi checkbox (vd "Chi hien chua doc" o tab Thong
+   bao/Blacklist) an luon min-width:12rem + padding + border + background danh
+   cho o nhap text/ngay, bien o tick nho xiu thanh mot khung RONG to 192px -
+   nhin nhu mot khoang trong lon giua cac o loc (da gap that, xem DevTools).
+   Cung mot loai bay ".dialog input[type=checkbox]" da tung dinh va tu va ben
+   duoi - o day chua co rule tuong tu nen chua vao. */
+.create-form input:not([type="checkbox"]),
 .create-form select,
-.controlbar input,
+.controlbar input:not([type="checkbox"]),
 .controlbar select,
 .search {
   padding: 0.3rem 0.5rem;
@@ -460,6 +466,13 @@ h1 {
   background: var(--surface);
   color: var(--text);
   min-width: 12rem;
+}
+
+.create-form input[type="checkbox"],
+.controlbar input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  accent-color: var(--accent);
 }
 
 /* Nut nam cung hang voi cac o chon: label la cot (caption tren, control duoi) nen
@@ -511,10 +524,18 @@ tr.is-readonly td:last-child {
   align-self: center;
 }
 
-.filters label.check {
+/* .controlbar label mac dinh la flex-direction: column (caption tren, control
+   duoi - hop voi select/input co nhan rieng). Checkbox thi khac: khong co
+   caption rieng, chu nam NGAY CANH o tick trong cung mot the <label>, nen ap
+   column vao day la xep o tick tren chu duoi - dung thu bay nguoi dung gap o
+   tab Blacklist/Thong bao. .filters con lai (Dashboard/Canh bao/...) khong co
+   checkbox nao dang dung nhung giu chung de phong sau nay them. */
+.filters label.check,
+.controlbar label.check {
   flex-direction: row;
   align-items: center;
   gap: 0.35rem;
+  white-space: nowrap;
   color: var(--text);
 }
 
@@ -1384,6 +1405,17 @@ tr.row--noevent {
   cursor: pointer;
 }
 
+/* SVG cua chuong khong mang width/height rieng (chi co viewBox) va khong noi
+   nao dinh nghia ".icon" chung cho toan trang - chi ".filter-toggle .icon" co
+   sizing (14px), rieng cho nut "Bo loc". Thieu dong nay thi trinh duyet ve svg
+   o kich thuoc mac dinh (khong khop 16x16 cua viewBox), tran han ra ngoai nut
+   2rem x 2rem, nhin to/lech qua vo nut. */
+.bell .icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
 .bell:hover {
   background: var(--surface-hover);
 }
@@ -1523,8 +1555,7 @@ tr.row--unread td:first-child {
 /* ---------------------------------------------------------- Bo loc khoang thoi gian */
 
 /* Hai o "Tu"/"Den" chi hien khi chon "Tuy chon…". Nam trong .controlbar hoac
-   .filter-panel nen tu ke thua style label/input cua cha - o day chi lo viec xep
-   hai o canh nhau va an/hien. */
+   .filter-panel nen o day chi lo viec xep hai o canh nhau va an/hien. */
 .timerange {
   display: flex;
   align-items: flex-end;
@@ -1535,8 +1566,26 @@ tr.row--unread td:first-child {
   display: none;
 }
 
-.timerange input {
+/* BAY tung dinh o ".dialog input[type=datetime-local]" (xem comment o do), lap
+   lai y het o day: input[type=datetime-local] KHONG tu ke thua padding/border/
+   background/mau tu .controlbar/.filters nhu label/select thuong - phai style
+   theo the moi khop kich thuoc va mau voi cac o chon con lai, khong thi ra nen
+   trang/chu den mac dinh trinh duyet, lech han giao dien va sai ca o theme toi. */
+.timerange input[type="datetime-local"] {
   min-width: 11rem;
+  padding: 0.3rem 0.5rem;
+  font: inherit;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  color-scheme: light dark;
+}
+
+.timerange input[type="datetime-local"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 /* ---------------------------------------------------------- Dai so lieu (tab Khoi phuc) */
